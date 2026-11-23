@@ -51,6 +51,9 @@ _REQUIRED_ROLE: dict[Permission, ScopeRole] = {
     Permission.RESEARCH_RUN_CREATE: ScopeRole.EDITOR,
     Permission.RESEARCH_RUN_READ: ScopeRole.VIEWER,
     Permission.RESEARCH_RUN_CONTROL: ScopeRole.EDITOR,
+    Permission.REPORT_READ: ScopeRole.VIEWER,
+    Permission.REPORT_APPROVE: ScopeRole.ADMIN,
+    Permission.REPORT_EXPORT: ScopeRole.EDITOR,
 }
 
 
@@ -185,7 +188,12 @@ class AuthorizationService:
         # requires a real workspace/organization role.
         if (
             _is_read(permission)
-            and permission not in {Permission.WORKSPACE_CONTENT_READ, Permission.RESEARCH_RUN_READ}
+            and permission
+            not in {
+                Permission.WORKSPACE_CONTENT_READ,
+                Permission.RESEARCH_RUN_READ,
+                Permission.REPORT_READ,
+            }
             and self._can_read_ancestor(resource)
         ):
             return ScopeRole.VIEWER

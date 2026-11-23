@@ -3,13 +3,12 @@
 面向企业团队的市场情报与调研平台后端。最终架构与交付阶段见
 [`docs/项目蓝图.md`](docs/项目蓝图.md)。
 
-> **当前实现范围：阶段 5「企业级多 Agent 调研」。**
+> **当前实现范围：阶段 6「证据审查与交付报告」。**
 > 已完成：阶段 1 工程底座、阶段 2 身份/租户/RBAC/ABAC/审计、阶段 3 资料摄取/RAG、
-> 阶段 4 搜索/安全采集，以及阶段 5 的 LangGraph Supervisor + 行业/竞品/用户专业
-> Agent、并行研究、只读工具注册、结构化 finding、预算治理、持久检查点、
-> 人工暂停/恢复和运行回放 API。
-> 尚未实现：证据审查/复核循环/报告导出（阶段 6）、Temporal/Kafka（阶段 7）、
-> 监测与协作（阶段 8）等。
+> 阶段 4 搜索/安全采集、阶段 5 LangGraph Supervisor/专业 Agent/预算/检查点，以及
+> 阶段 6 的 source/evidence/claim/citation 实体、确定性 Reviewer、有限补查、
+> 引用完整性/新鲜度/独立性/冲突检查、报告版本、人工审批、导出任务与下载 API。
+> 尚未实现：Temporal/Kafka（阶段 7）、监测与协作（阶段 8）等。
 
 ## 技术栈
 
@@ -20,6 +19,7 @@
 - Qdrant（qdrant-client）、可替换 embedding provider、pypdf
 - 可配置外部搜索 Provider、隔离采集 worker（SSRF/DNS pinning/robots）
 - LangGraph 1.x（MIT；Supervisor + 专业 Agent、并行 fan-out、应用级持久检查点）
+- 报告导出：Markdown + DOCX（python-docx，MIT）；PDF/表格导出尚未实现
 - OpenTelemetry（可选，OTLP/HTTP）
 - pytest / pytest-asyncio、Ruff、mypy（strict）、GitHub Actions
 - Docker / Docker Compose
@@ -38,6 +38,7 @@ app/
   rag/                 # 解析、分块、embedding、对象存储、Qdrant、混合检索
   collector/           # 搜索 Provider、SSRF 安全抓取、robots、worker、来源/快照
   agent/               # LangGraph Supervisor、专业 Agent、只读工具、预算、runner/worker
+  reporting/           # Reviewer、claim/evidence/citation、报告生成、审批、导出/worker
   schemas/             # API schema
   services/            # 租户/成员/用户/审计/文档/RAG 编排
 alembic/               # 迁移
@@ -91,9 +92,12 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000 --no-access-log
 # 另开进程运行采集 worker（COLLECTOR_ENABLED=true 时）
 python -m app.collector.worker
 
-# 另开进程运行多 Agent 研究 worker（AGENT_ENABLED=true 时）
+# 另开进程运行研究/审查/导出 worker（AGENT_ENABLED=true 时）
 python -m app.agent.worker
 ```
+
+同一个 `agent` worker 依次处理 research、review、export 队列；`REPORT_ENABLED=true`
+时每次研究完成后会自动排入审查任务。报告只有人工 approve 后才能导出。
 
 或使用 Makefile（`make install-dev`、`make migrate`、`make run`）。
 Docker Compose 会同时启动 `collector` 与 `agent` worker；两者都没有入站端口。
@@ -263,8 +267,8 @@ market-intel provision-user \
   不接受项目成员的祖先只读回退。
 - **不可信输入**：RAG chunk 与网页快照均标记为不可信数据。模型返回的
   `evidence_id` 必须存在于本次授权证据集合中，`evidence_quote` 必须能在原文中匹配；
-  否则 finding 被拒绝。常见提示注入文本会被标记 `injection_suspected=true` 供阶段 6
-  复核，但安全不依赖该启发式规则：工具集合固定、来源服务端校验、模型不能调用任意工具。
+  否则 finding 被拒绝。常见提示注入文本会被标记 `injection_suspected=true`，Reviewer
+  和报告会保留该标记，但安全不依赖该启发式规则：工具集合固定、来源服务端校验、模型不能调用任意工具。
 - **预算治理**：run 保存 token/成本/tool-call/时间/轮数/并行度/最大 finding 数等
   server-side 预算。plan、每个专业 Agent 和每次模型调用都受预算切片约束；并行任务
   按剩余预算均分，预算耗尽会持久化为 `budget_exhausted`，不会无限循环。
@@ -287,6 +291,51 @@ market-intel provision-user \
   task 在预算内有限重试，最终可标记 `partial`。provider/plan 失败、无授权工具、
   授权被撤销或无 finding 会明确落为 failed/budget_exhausted 状态。
 - `AGENT_ENABLED=false` 时研究 API fail closed 返回 503；文档、采集和身份 API 不受影响。
+
+## 证据审查与交付报告（阶段 6）
+
+- **不可混淆的实体**：阶段 5 的 finding 会被规范化为独立的
+  `research_sources`、`research_evidence`、`research_claims`、
+  `research_citations`。source 表示文档版本或外部快照，evidence 表示可定位的
+  引用片段，claim 表示待审查结论，citation 表示 claim→evidence 关系；均按 root run
+  聚合，同一来源/证据/claim 幂等去重。
+- **Reviewer 检查**：审查由确定性规则执行，不把模型自评当作证据：
+  1. citation 必须存在，且对应 document/chunk/version 或 external snapshot 仍可读取；
+  2. quote 必须仍能在来源文本中匹配；
+  3. claim 与 evidence 必须有足够的词法支持分数；
+  4. 报告证据超过 `REPORT_MAX_EVIDENCE_AGE_DAYS` 或文档版本已非 active 时标记 stale；
+  5. 统计独立来源数；少于 `REPORT_MIN_INDEPENDENT_SOURCES` 时降级为 partial；
+  6. 对共享显著词且极性相反的 claim 标记 conflict（保守词法启发式，不替代人工领域判断）。
+- **状态与降级**：claim 状态为 `supported` / `partially_supported` / `insufficient` /
+  `conflicted` / `invalid`。无有效引用的 claim 明确标为 invalid/insufficient；报告不会把
+  无法验证的结论写成已支持结论。外部文本、引用和 injection 标记保持 `untrusted`。
+- **有限补查**：Reviewer 对 invalid/insufficient/conflicted（以及独立来源不足的
+  partial）生成最多 `REPORT_MAX_FOLLOWUP_QUESTIONS` 个补查问题，并创建
+  `run_kind=followup`、`root_run_id` 指向 root run 的新研究 run；补查轮数受
+  `REPORT_MAX_FOLLOWUP_ROUNDS` 硬限制。followup run 仍由 langGraph worker 执行，
+  完成后自动唤醒 root review。达到上限后必须出报告并保留 gaps/conflicts，不会无限补查。
+- **报告生成**：由结构化 claim/evidence/source 确定性生成 Markdown，包含执行摘要、
+  方法、发现、风险与限制、冲突与缺口、证据链接、来源列表和审查汇总。支持
+  supported/partial findings 与 downgraded gaps；报告内容有长度上限并记录截断。
+- **不可变版本与完整性**：每次 review 生成新的 `report_versions` 版本，保存 Markdown、
+  结构化 JSON、来源列表、citation index 和覆盖 Markdown+结构化 JSON 的 SHA-256
+  checksum；旧版本保持不变。审批/导出前必须通过 checksum 校验。报告状态为 draft/approved/rejected。
+- **人工审批**：`REPORT_APPROVE` 要求 workspace/project admin；只能审批当前 draft
+  version，可拒绝并记录原因。审批/拒绝写入审计，报告版本号、checksum 与 actor 可追踪。
+- **导出任务**：只有 approved version 可创建导出 job；worker 支持 Markdown 与 DOCX，
+  写入 tenant/workspace/report/version 命名空间的对象存储。job 有 lease、最大尝试、
+  指数退避、失败码和审计；下载 API 只返回已完成导出，使用服务端生成文件名并禁止缓存。
+- **权限**：报告读取使用 `report:read`（workspace 级 run 不接受项目成员祖先回退）；
+  review 启动/重跑使用 `research_run:control`；审批使用 `report:approve`（admin）；
+  导出使用 `report:export`（editor+）。所有 report/version/export 查询仍先解析 root run
+  并写租户/项目作用域。
+- `REPORT_ENABLED=false` 时 review/report/export API fail closed 返回 503；研究、RAG 和
+  采集 API 不受影响。`REPORT_AUTO_REVIEW=false` 时由 API 手动启动首次 review。
+  Review/export 由 `agent` worker 执行，因此需要 `AGENT_ENABLED=true` 并启动该 worker。
+- **已知 ACL 边界**：报告继承 root run 的 workspace/project 读取 ACL，不逐条重鉴权
+  原始来源；项目成员可能看到 root research run 中已授权证据的摘录。原始来源删除后，
+  review 会标记 citation invalid，但既有报告版本和审计记录保留。阶段 7/8 可增加引用级
+  ACL 与数据保留策略。
 
 ## 多租户与数据库约束
 
@@ -340,6 +389,15 @@ market-intel provision-user \
 | GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/findings` | research read |
 | GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/checkpoints` | research read（回放状态） |
 | GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/tool-calls` | research read（只读工具轨迹） |
+| POST/GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/review` | research control / report read |
+| GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/review/claims` | report read（claim/citation/evidence） |
+| GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/report` | report read |
+| GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/report/versions[/{version_id}]` | report read |
+| POST | `/api/v1/workspaces/{id}/research-runs/{run_id}/report/versions/{version_id}/approve` | report approve（admin） |
+| POST | `/api/v1/workspaces/{id}/research-runs/{run_id}/report/versions/{version_id}/reject` | report approve（admin） |
+| POST | `/api/v1/workspaces/{id}/research-runs/{run_id}/report/versions/{version_id}/exports` | report export（editor+） |
+| GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/report/exports[/{job_id}]` | report read |
+| GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/report/exports/{job_id}/download` | report read（仅已完成） |
 | GET | `/api/v1/audit-events` | tenant_admin |
 
 研究 run 创建示例（随后由 `python -m app.agent.worker` 执行）：
@@ -409,6 +467,14 @@ POST /api/v1/workspaces/{workspace_id}/research-runs
 | `AGENT_MAX_SECONDS` / `AGENT_TASK_TIMEOUT_SECONDS` / `AGENT_MIN_FINDINGS_FOR_FOLLOWUP` | 总时长/单任务超时/触发补查的 finding 下限 |
 | `AGENT_MAX_CHECKPOINT_BYTES` | 单检查点状态大小上限 |
 | `AGENT_MAX_CONCURRENT_RUNS` / `AGENT_POLL_INTERVAL_SECONDS` / `AGENT_RUN_LEASE_SECONDS` / `AGENT_MAX_RUN_ATTEMPTS` | worker 并发、轮询、lease 与恢复上限 |
+| `REPORT_ENABLED` / `REPORT_AUTO_REVIEW` | 启用 review/report/export；完成后自动排队审查 |
+| `REPORT_MAX_FOLLOWUP_ROUNDS` / `REPORT_MAX_FOLLOWUP_QUESTIONS` | 有限补查轮数/每轮问题数 |
+| `REPORT_MAX_CLAIMS` / `REPORT_MAX_EVIDENCE_PER_CLAIM` / `REPORT_MAX_LINEAGE_FINDINGS` | claim/evidence/lineage 处理上限 |
+| `REPORT_MAX_EVIDENCE_AGE_DAYS` / `REPORT_MIN_INDEPENDENT_SOURCES` / `REPORT_MIN_SUPPORT_SCORE` | freshness、独立来源与词法支持阈值 |
+| `REPORT_CONFLICT_MIN_SHARED_TOKENS` | 冲突启发式的最小共享显著词 |
+| `REPORT_MAX_CONTENT_CHARS` / `REPORT_MAX_EXPORT_BYTES` | 报告内容/导出文件上限 |
+| `REPORT_REVIEW_*` / `REPORT_MAX_CONCURRENT_REVIEWS` | review lease、重试、轮询与并发 |
+| `REPORT_EXPORT_*` / `REPORT_MAX_CONCURRENT_EXPORTS` | export lease、重试、轮询与并发 |
 | `OIDC_ENABLED` | production 必须为 true |
 | `OIDC_ISSUER` / `OIDC_AUDIENCE` / `OIDC_JWKS_URI` | 签发方、受众、JWKS；production 必须 https |
 | `OIDC_ALGORITHMS` | 非对称算法列表，默认 `RS256` |
@@ -425,8 +491,8 @@ POST /api/v1/workspaces/{workspace_id}/research-runs
 必须启用 OIDC 且 issuer/JWKS 使用 https；启用 RAG 时必须使用 S3、HTTP embedding、
 https endpoint，并禁止本地 Qdrant 模式与自动建桶；启用采集时禁止私网目标、只允许
 80/443、要求 S3/TLS，搜索 Provider URL 必须 https；启用 Agent 时 `AGENT_PROVIDER`
-必须为 `http`，`AGENT_API_URL` 必须为 https。敏感字段不出现在 `repr`；日志对
-token/authorization/password/api_key 等 key 递归脱敏。
+必须为 `http`，`AGENT_API_URL` 必须为 https；启用报告时要求 S3/TLS 与 bucket。
+敏感字段不出现在 `repr`；日志对 token/authorization/password/api_key 等 key 递归脱敏。
 
 > embedding 模型/版本或维度变更后必须重建索引（重新索引现有版本或写入新版本）；
 > Qdrant collection 维度不匹配会阻止启动。
@@ -437,11 +503,13 @@ token/authorization/password/api_key 等 key 递归脱敏。
   `workspace.created/updated`、`project.created/updated`、
   `membership.granted/revoked`、`document.uploaded/indexed/deleted`、
   `collection.task_queued/succeeded`、`source.created/updated/deleted`、
-  `research_run.created/paused/resumed/canceled/completed/failed/budget_exhausted`，
-  与业务变更同事务写入。
+  `research_run.created/paused/resumed/canceled/completed/failed/budget_exhausted`、
+  `research_review.queued/started/awaiting_followup/completed/failed/followup_created`、
+  `report.version_created/version_approved/version_rejected`、
+  `report.export_queued/export_succeeded/export_failed`，与业务变更同事务写入。
 - 失败/拒绝：`authorization.denied`、`document.index_failed`、`document.delete_failed`、
-  `collection.task_failed`、`source.delete_failed`，用独立短事务/终态事务写入，
-  避免请求回滚后丢失。
+  `collection.task_failed`、`source.delete_failed`、`research_review.failed`、
+  `report.export_failed`，用独立短事务/终态事务写入，避免请求回滚后丢失。
 - 审计只记录 ID、动作、资源类型和受限元数据；不记录 token、请求体、密码、文件名、
   文档正文或网页原文。
 - JSON 日志包含 `request_id`、`tenant_id`、`trace_id`/`span_id`；访问日志不含查询串与
@@ -486,6 +554,12 @@ finding 指向真实 WebSource、checkpoint 回放、pending 暂停/恢复、运
 检查点恢复且不重跑已完成工具、运行中撤销成员权限后失败、取消、预算耗尽状态持久化、
 项目成员不得读取 workspace 级 run，以及研究表 RLS。
 
+阶段 6 单元测试覆盖：claim/evidence 词法支持、冲突极性、freshness、quote 存在性、
+Markdown/DOCX 导出结构。集成测试覆盖：研究完成后自动 review、source/evidence/
+claim/citation 派生、引用校验、source 删除后 citation invalid、有限 followup 与
+降级报告、报告版本、人工审批权限、审批/导出审计、checksum 完整性、Markdown 导出
+任务/下载、重新 review 生成新版本、跨租户报告 404、报告表 RLS。
+
 CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升级/回滚/再升级、
 `alembic check`、全部测试，并构建 runtime Docker 镜像。
 
@@ -503,19 +577,27 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
 - [ADR-0010：SSRF 防护、快照去重与采集重试](docs/adr/0010-collection-security.md)
 - [ADR-0011：LangGraph Supervisor、并行 Agent 与持久检查点](docs/adr/0011-langgraph-supervisor-checkpoints.md)
 - [ADR-0012：Agent 工具最小权限、不可信证据与预算治理](docs/adr/0012-agent-tool-security-budgets.md)
+- [ADR-0013：独立 claim/evidence/source/citation 与确定性 Reviewer](docs/adr/0013-evidence-review-entities.md)
+- [ADR-0014：不可变报告版本、人工审批与导出任务](docs/adr/0014-report-versions-exports.md)
 - [ADR 模板](docs/adr/0000-template.md)
 - [工程规范](docs/engineering-standards.md)
 - [Agent 模型网关契约](docs/agent-model-gateway.md)
+- [证据审查与报告交付操作说明](docs/report-delivery.md)
 
-## 本阶段限制 / 阶段 6 依赖
+## 本阶段限制 / 阶段 7 依赖
 
-- 已实现阶段 5 的 LangGraph Supervisor/专业 Agent/持久检查点；尚未实现阶段 6 的
-  evidence reviewer、冲突/独立性/新鲜度复核、有限补查循环、报告版本与导出。
-- finding 是“证据绑定草稿”，不是经复核的最终结论；`injection_suspected` 只是启发式
-  标记，不能替代阶段 6 的证据审查。
-- run/finding/checkpoint 的读取 ACL 是 run 的 workspace/project ACL；finding 中的证据
-  摘录会随 run 提供给有 run 读权限的项目成员。创建时已按请求者权限选择证据，但生成后
-  不会对每个读者重新逐个来源鉴权。阶段 6 需要补充引用级 ACL/来源删除后的引用策略。
+- 已实现阶段 6 的确定性 Reviewer、有限补查、报告版本、人工审批和 Markdown/DOCX 导出；
+  尚未实现 Temporal/Kafka（阶段 7）、监测协作（阶段 8）和生产运营治理（阶段 9）。
+- Reviewer 的证据关系与冲突检测是确定性词法启发式，不包含语义 NLI/领域专家复核；
+  它只作为强制 citation 校验之上的降级/标记机制，不能宣称自动事实核查已完成。
+- 报告版本/审查/导出仍是应用级 PostgreSQL 队列（lease + retry），不是 Temporal 持久
+  工作流；阶段 7 需补齐跨服务重启恢复、outbox、死信取消和更细的并发公平性。
+- run/finding/review/report 的读取 ACL 是 root run 的 workspace/project ACL；报告中的
+  证据摘录会提供给有报告读权限的项目成员，不会对每个读者逐条重新鉴权原始来源。
+  引用级 ACL 仍需阶段 7/8/9 配合数据治理补齐。
+- 报告导出只支持 Markdown 与 DOCX；PDF、表格/图表、Word 模板、数字签名和外部 DMS
+  集成未实现。DOCX 由 python-docx 生成，未在 Microsoft Word/Office 365 全版本做兼容性
+  回归。
 - 搜索 Provider 只定义通用 HTTP JSON contract，未实现具体商业搜索供应商 SDK；web
   search 返回的未采集 URL 只是 lead，不能作为 finding 证据；必须先由采集流程形成
   WebSource/Snapshot 才可引用。
@@ -542,6 +624,10 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
   这降低提示注入风险，但也限制复杂自主工具编排，后续可在同一授权边界内扩展。
 - 模型接入为单一配置的 HTTP gateway + 服务端预算/超时/有限重试；尚未实现多供应商
   路由、模型级 QPS 限流、跨 run 成本归集或按角色选择模型，阶段 8/9 补齐。
+- Reviewer 不调用额外模型；若需要语义关系判断/NLI，应在后续阶段以独立、可审计的
+  reviewer provider 扩展，不能复用产生 claim 的同一模型自评。
+- followup 通过新建 linked research run 实现，补查轮数/问题数有硬上限；达到上限后
+  报告必须保留 gaps/conflicts，不能继续自动循环。
 - 持久检查点由应用在 LangGraph superstep 后写入租户表，不是 LangGraph 原生
   checkpointer；暂停/取消/权限变更在 superstep 边界生效，不保证中断进行中的单个
   模型/工具调用；该 superstep 已产生的 finding 会保留供审计。阶段 7 由 Temporal 补齐
@@ -552,8 +638,9 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
 - agent worker 使用 PostgreSQL lease 队列，不是 Temporal/Kafka；多 worker 依赖 lease
   与 heartbeat，极端时钟/网络分区场景需阶段 7/9 的运维验证。
 - 来源搜索目前是参数化 ILIKE 候选，未建立外部快照全文索引；大规模来源库需要专用
-  检索/索引方案。
-- 未实现租户级上传/embedding/采集/Agent 配额与成本归集；阶段 8/9 补齐。
+  检索/索引方案。报告生成的 claim 审查/词法冲突为 O(n²) 有界比较（默认 claim 上限
+  100），大规模报告需要索引/模型辅助。
+- 未实现租户级上传/embedding/采集/Agent/报告配额与成本归集；阶段 8/9 补齐。
 - 文档支持 `.txt`/`.md`/`.pdf`；OCR、DOCX、表格/图片与更复杂版式解析未实现；未接入
   恶意文件扫描，解析在受限线程而非独立沙箱进程运行，部署需补充恶意内容检测与资源限制。
 - 关键词检索为 PostgreSQL 全文 + 参数化 ILIKE 回退，未接入专用 BM25/OpenSearch；
@@ -566,5 +653,7 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
 - 文档索引/删除仍在请求内同步执行并受请求超时限制；采集使用 PostgreSQL 任务队列 +
   独立 worker，但尚未接入 Temporal/Kafka。并发索引/删除与 Qdrant 跨存储一致性采用
   PG 回查、状态租约与可重试状态，仍需阶段 7 的 outbox/持久工作流完善。
+- 报告导出对象写入与 RAG/采集相同的对象存储；本地 MinIO/S3 未做真实服务联调，生产
+  需验证桶权限、TLS、加密、生命周期与导出对象保留策略。
 - 本地 Compose 数据库用户是超级用户，RLS 的实际强制需要部署时切换为非超级用户；
   生产角色/权限、密钥轮换、SLO、备份恢复与合规认证属于后续部署阶段，本文不作未验证承诺。

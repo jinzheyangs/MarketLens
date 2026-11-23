@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, StringConstraints
 from app.agent.enums import (
     AgentRole,
     FindingSourceKind,
+    ResearchRunKind,
     ResearchRunStatus,
     ResearchToolName,
     ToolCallStatus,
@@ -44,6 +45,10 @@ class ResearchRunRead(BaseModel):
     tenant_id: UUID
     workspace_id: UUID
     project_id: UUID | None
+    parent_run_id: UUID | None
+    root_run_id: UUID | None
+    run_kind: ResearchRunKind
+    followup_round: int
     requested_by: UUID | None
     request_key: str | None
     objective: str

@@ -13,6 +13,8 @@ from app.core.logging import configure_logging, get_logger
 from app.db.rls import install_rls_context
 from app.db.session import create_engine, create_session_factory
 from app.db.tenant_guard import install_tenant_guard
+from app.reporting.runner import ExportRunner, ReviewRunner
+from app.reporting.service import ReviewServices, build_review_services
 from app.services.rag import build_rag_services
 
 logger = get_logger(__name__)
@@ -47,6 +49,42 @@ def main(argv: list[str] | None = None) -> int:
         services=agent_services,
         session_factory=session_factory,
     )
+    review_services: ReviewServices | None = None
+    review_runner: ReviewRunner | None = None
+    export_runner: ExportRunner | None = None
+    if settings.report_enabled:
+        review_services = build_review_services(settings, session_factory)
+        review_runner = ReviewRunner(
+            settings=settings,
+            services=review_services,
+            session_factory=session_factory,
+        )
+        export_runner = ExportRunner(
+            settings=settings,
+            services=review_services,
+            session_factory=session_factory,
+        )
+
+    async def run_batch() -> tuple[int, int, int]:
+        researched = await runner.run_once()
+        reviewed = await review_runner.run_once() if review_runner is not None else 0
+        exported = await export_runner.run_once() if export_runner is not None else 0
+        return researched, reviewed, exported
+
+    async def run_forever() -> None:
+        poll = settings.agent_poll_interval_seconds
+        if review_runner is not None:
+            poll = min(poll, settings.report_review_poll_interval_seconds)
+        if export_runner is not None:
+            poll = min(poll, settings.report_export_poll_interval_seconds)
+        while True:
+            try:
+                researched, reviewed, exported = await run_batch()
+            except Exception:
+                logger.exception("research_worker_iteration_failed")
+                researched = reviewed = exported = 0
+            if researched == reviewed == exported == 0:
+                await asyncio.sleep(poll)
 
     async def run() -> None:
         try:
@@ -54,15 +92,25 @@ def main(argv: list[str] | None = None) -> int:
                 await rag_services.ensure_ready()
             if collector_services is not None:
                 await collector_services.ensure_ready()
+            if review_services is not None:
+                await review_services.ensure_ready()
             if args.once:
-                processed = await runner.run_once()
+                researched, reviewed, exported = await run_batch()
                 logger.info(
                     "research_batch_complete",
-                    extra={"context": {"processed": processed}},
+                    extra={
+                        "context": {
+                            "researched": researched,
+                            "reviewed": reviewed,
+                            "exported": exported,
+                        }
+                    },
                 )
                 return
-            await runner.run_forever()
+            await run_forever()
         finally:
+            if review_services is not None:
+                await review_services.aclose()
             await agent_services.aclose()
             if collector_services is not None:
                 await collector_services.aclose()

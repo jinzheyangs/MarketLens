@@ -15,6 +15,16 @@ from app.db.models.membership import (
 )
 from app.db.models.organization import Organization
 from app.db.models.project import Project
+from app.db.models.reporting import (
+    Report,
+    ReportExportJob,
+    ReportVersion,
+    ResearchCitation,
+    ResearchClaim,
+    ResearchEvidence,
+    ResearchReview,
+    ResearchSource,
+)
 from app.db.models.research import (
     ResearchCheckpoint,
     ResearchFinding,
@@ -36,9 +46,17 @@ __all__ = [
     "OrganizationMembership",
     "Project",
     "ProjectMembership",
+    "Report",
+    "ReportExportJob",
+    "ReportVersion",
     "ResearchCheckpoint",
+    "ResearchCitation",
+    "ResearchClaim",
+    "ResearchEvidence",
     "ResearchFinding",
+    "ResearchReview",
     "ResearchRun",
+    "ResearchSource",
     "ResearchToolCall",
     "SourceSnapshot",
     "Tenant",

@@ -46,19 +46,28 @@
     上限，并强制硬停止；模型返回的 usage 计数，成本由服务端计算。Supervisor 不得无限互聊。
     每个 LangGraph superstep 后写租户隔离的 checkpoint，暂停/恢复/崩溃恢复不得重复已完成
     task 或 finding。worker 使用 lease + heartbeat，API 不执行长调研。
-13. **错误与日志**：业务错误使用 `AppError` 和稳定错误码；不在响应中返回堆栈、DSN、token
+13. **证据审查与报告**：stage5 finding 必须派生为独立 source/evidence/claim/citation；
+    Reviewer 必须先验证 citation/source/version/chunk/snapshot 存在、quote 可匹配，再计算
+    支持/新鲜度/独立性/冲突。不得让生成 claim 的模型自评“已支持”替代证据校验。报告必须
+    对 invalid/insufficient/conflicted/partial claim 明确降级，包含方法、风险、限制、证据
+    链接和来源列表；补查轮数/问题数有硬上限，达到上限必须保留 gaps 出报告。
+14. **报告版本与导出**：报告版本不可变，保存 checksum；审批/拒绝要求 admin 权限并审计，
+    只能操作当前 draft version；只有 approved version 可导出。导出 job 使用 lease/重试/
+    fencing，对象 key 服务端生成，下载前重新授权且不暴露内部 key。不得把未审批 draft 对外
+    导出或宣称合规/事实核查已完成。
+15. **错误与日志**：业务错误使用 `AppError` 和稳定错误码；不在响应中返回堆栈、DSN、token
    或上游原文。日志使用结构化 `extra={"context": ...}`，敏感 key 由 formatter 脱敏；不记录
    body/header/查询串/token/文档正文/网页原文/文件名。
-14. **迁移**：数据库变更必须通过 Alembic revision；禁止手工改生产库。约束/索引显式命名，
+16. **迁移**：数据库变更必须通过 Alembic revision；禁止手工改生产库。约束/索引显式命名，
     与 `NAMING_CONVENTION` 一致。不要修改已合并的迁移，新增 revision。新增租户表必须同时
     启用 RLS 策略与租户复合外键（如适用）。
-15. **测试**：新增行为必须有测试；租户/权限/身份/外部输入/检索/网络边界必须有负向测试。
+17. **测试**：新增行为必须有测试；租户/权限/身份/外部输入/检索/网络边界必须有负向测试。
     单元测试不得依赖真实外部网络；集成测试使用 `TEST_DATABASE_URL`（库名含 `test`）。
     RAG 测试可使用 qdrant-client 内存模式与本地对象存储；采集测试使用本地 HTTP server、
     注入 resolver 和 fake Provider，不依赖真实供应商。
-16. **类型与风格**：`ruff check .`、`ruff format --check .`、`mypy app` 必须通过。公共函数写
+18. **类型与风格**：`ruff check .`、`ruff format --check .`、`mypy app` 必须通过。公共函数写
     类型标注与必要 docstring；注释解释“为什么”，不复述代码。
-17. **依赖与安全**：新增依赖需说明用途与许可证；不在运行时拉取未固定来源的代码。外部内容
+19. **依赖与安全**：新增依赖需说明用途与许可证；不在运行时拉取未固定来源的代码。外部内容
     不得进入 `eval/exec/pickle` 等危险路径。LangGraph 只接收 schema 化状态，不执行模型返回
     的代码或工具名。
 
@@ -72,6 +81,8 @@
   外部网页/搜索结果。
 - `app/agent`：LangGraph 图、专业 Agent、只读工具注册、模型 Provider、预算、runner/worker；
   不得暴露写工具或信任模型/证据内容。
+- `app/reporting`：claim/evidence/citation 派生、确定性 Reviewer、报告版本、审批、导出
+  worker；不得让模型输出替代来源校验，不得绕过 root run ACL。
 - `app/services`：业务编排、审计、外部协作；不直接依赖 FastAPI。
 - `app/db`：模型、会话、租户守卫、RLS 与查询辅助；不向上层返回 ORM 细节给外部契约。
 - `app/core`：配置、上下文、错误、日志、中间件、telemetry；不得依赖业务模块。

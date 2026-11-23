@@ -27,6 +27,7 @@ from app.agent.enums import (
     SPECIALIST_ROLES,
     FindingSourceKind,
     ResearchPhase,
+    ResearchRunKind,
     ResearchRunStatus,
     ResearchToolName,
     ToolCallStatus,
@@ -62,8 +63,25 @@ class ResearchRun(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
             name="fk_research_runs_tenant_project",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "parent_run_id"],
+            ["research_runs.tenant_id", "research_runs.id"],
+            name="fk_research_runs_tenant_parent",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "root_run_id"],
+            ["research_runs.tenant_id", "research_runs.id"],
+            name="fk_research_runs_tenant_root",
+            ondelete="RESTRICT",
+        ),
         CheckConstraint(f"status IN ({_RUN_STATUSES})", name="status_valid"),
+        CheckConstraint(
+            f"run_kind IN ('{ResearchRunKind.PRIMARY}', '{ResearchRunKind.FOLLOWUP}')",
+            name="run_kind_valid",
+        ),
         CheckConstraint("round >= 0", name="round_non_negative"),
+        CheckConstraint("followup_round >= 0", name="followup_round_non_negative"),
         CheckConstraint("max_rounds >= 1", name="max_rounds_positive"),
         CheckConstraint("attempts >= 0", name="attempts_non_negative"),
         CheckConstraint("max_attempts >= 1", name="max_attempts_positive"),
@@ -82,10 +100,34 @@ class ResearchRun(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
             "status",
             "next_attempt_at",
         ),
+        Index(
+            "ix_research_runs_tenant_root",
+            "tenant_id",
+            "root_run_id",
+        ),
+        Index(
+            "uq_research_runs_root_followup_round",
+            "tenant_id",
+            "root_run_id",
+            "followup_round",
+            unique=True,
+            postgresql_where=text("run_kind = 'followup'"),
+        ),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(nullable=False)
     project_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    parent_run_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    root_run_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    run_kind: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=ResearchRunKind.PRIMARY.value,
+        server_default=text(f"'{ResearchRunKind.PRIMARY}'"),
+    )
+    followup_round: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     requested_by: Mapped[UUID | None] = mapped_column(nullable=True)
     request_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     objective: Mapped[str] = mapped_column(Text, nullable=False)

@@ -62,6 +62,7 @@ from app.db.models import (
 from app.db.tenant_scope import tenant_scoped_select
 from app.rag.access import build_document_access_scope
 from app.rag.types import DocumentAccessScope
+from app.reporting.queue import enqueue_review_for_terminal_run
 from app.services.audit import AuditWriter, record_event
 from app.services.tenancy import (
     get_project_bundle,
@@ -921,6 +922,11 @@ class ResearchRunner:
                 )
                 or 0
             )
+            await enqueue_review_for_terminal_run(
+                session,
+                run=run,
+                settings=self._settings,
+            )
             if status == ResearchRunStatus.COMPLETED:
                 run.error_code = None
                 run.error_message = None
@@ -1039,6 +1045,11 @@ class ResearchRunner:
             run.lease_expires_at = None
             run.worker_id = None
             run.completed_at = _iso_now()
+            await enqueue_review_for_terminal_run(
+                session,
+                run=run,
+                settings=self._settings,
+            )
             record_event(
                 session,
                 tenant_id=run.tenant_id,
@@ -1087,6 +1098,11 @@ class ResearchRunner:
                 current.usage = usage_totals(cast(ResearchState, state)).as_dict()
                 current.error_count = len(unresolved_errors(cast(ResearchState, state)))
             current.error_count = max(1, current.error_count)
+            await enqueue_review_for_terminal_run(
+                session,
+                run=current,
+                settings=self._settings,
+            )
             record_event(
                 session,
                 tenant_id=current.tenant_id,

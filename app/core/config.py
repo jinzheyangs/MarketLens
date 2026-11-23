@@ -203,6 +203,29 @@ class Settings(BaseSettings):
     agent_run_lease_seconds: int = Field(default=300, ge=30, le=3_600)
     agent_max_run_attempts: int = Field(default=3, ge=1, le=10)
 
+    # Evidence review, reports, and exports (stage 6).
+    report_enabled: bool = False
+    report_auto_review: bool = True
+    report_max_followup_rounds: int = Field(default=1, ge=0, le=5)
+    report_max_followup_questions: int = Field(default=3, ge=1, le=10)
+    report_max_claims: int = Field(default=100, ge=1, le=1_000)
+    report_max_evidence_per_claim: int = Field(default=10, ge=1, le=50)
+    report_max_lineage_findings: int = Field(default=500, ge=1, le=5_000)
+    report_max_evidence_age_days: int = Field(default=730, ge=1, le=3_650)
+    report_min_independent_sources: int = Field(default=1, ge=1, le=10)
+    report_min_support_score: float = Field(default=0.1, ge=0.0, le=1.0)
+    report_conflict_min_shared_tokens: int = Field(default=3, ge=2, le=20)
+    report_max_content_chars: int = Field(default=1_000_000, ge=1_000, le=10_000_000)
+    report_review_lease_seconds: int = Field(default=300, ge=30, le=3_600)
+    report_review_max_attempts: int = Field(default=3, ge=1, le=10)
+    report_review_poll_interval_seconds: float = Field(default=5.0, ge=0.1, le=300)
+    report_max_concurrent_reviews: int = Field(default=2, ge=1, le=16)
+    report_export_lease_seconds: int = Field(default=120, ge=30, le=3_600)
+    report_export_max_attempts: int = Field(default=3, ge=1, le=10)
+    report_export_poll_interval_seconds: float = Field(default=2.0, ge=0.1, le=60)
+    report_max_concurrent_exports: int = Field(default=2, ge=1, le=16)
+    report_max_export_bytes: int = Field(default=20_000_000, ge=1_024, le=100_000_000)
+
     # HTTP / API behavior.
     log_level: LogLevel = "INFO"
     log_format: Literal["json", "console"] = "json"
@@ -594,6 +617,8 @@ class Settings(BaseSettings):
 
         if self.agent_enabled and self.agent_provider == "http" and not self.agent_api_url:
             raise ValueError("AGENT_PROVIDER=http requires AGENT_API_URL")
+        if self.report_enabled and self.object_storage_backend == "s3" and not self.s3_bucket:
+            raise ValueError("REPORT_ENABLED with S3 requires S3_BUCKET")
         if self.agent_max_output_tokens_per_call > self.agent_max_output_tokens:
             raise ValueError(
                 "AGENT_MAX_OUTPUT_TOKENS_PER_CALL must not exceed AGENT_MAX_OUTPUT_TOKENS"
@@ -669,6 +694,17 @@ class Settings(BaseSettings):
                     raise ValueError("AGENT_ENABLED requires AGENT_API_URL in production")
                 if urlparse(self.agent_api_url).scheme != "https":
                     raise ValueError("AGENT_API_URL must use https in production")
+            if self.report_enabled:
+                if self.object_storage_backend != "s3":
+                    raise ValueError(
+                        "REPORT_ENABLED requires OBJECT_STORAGE_BACKEND=s3 in production"
+                    )
+                if not self.s3_bucket:
+                    raise ValueError("REPORT_ENABLED requires S3_BUCKET in production")
+                if not self.s3_use_ssl:
+                    raise ValueError("S3_USE_SSL must be true in production")
+                if self.s3_endpoint_url and urlparse(self.s3_endpoint_url).scheme != "https":
+                    raise ValueError("S3_ENDPOINT_URL must use https in production")
         return self
 
     @property

@@ -29,6 +29,11 @@ TERMINAL_RUN_STATUSES = frozenset(
 )
 
 
+class ResearchRunKind(StrEnum):
+    PRIMARY = "primary"
+    FOLLOWUP = "followup"
+
+
 class ResearchPhase(StrEnum):
     INITIALIZED = "initialized"
     PLANNING = "planning"

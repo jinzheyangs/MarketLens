@@ -409,3 +409,42 @@ def test_production_agent_requires_https_model_gateway() -> None:
         agent_api_url="https://models.example.com/v1/research",
     )
     assert valid.agent_enabled is True
+
+
+def test_report_configuration_validation() -> None:
+    with pytest.raises(ValidationError):
+        make_settings(
+            report_enabled=True,
+            object_storage_backend="s3",
+            s3_bucket=None,
+        )
+    with pytest.raises(ValidationError):
+        make_settings(report_max_followup_rounds=-1)
+    with pytest.raises(ValidationError):
+        make_settings(report_min_support_score=1.5)
+    with pytest.raises(ValidationError):
+        make_settings(report_min_independent_sources=0)
+
+    settings = make_settings(
+        report_enabled=True,
+        report_auto_review=False,
+        report_max_followup_rounds=2,
+        report_min_independent_sources=2,
+        object_storage_backend="local",
+    )
+    assert settings.report_enabled is True
+    assert settings.report_auto_review is False
+    assert settings.report_max_followup_rounds == 2
+    assert settings.report_min_independent_sources == 2
+
+
+def test_production_report_requires_s3() -> None:
+    with pytest.raises(ValidationError):
+        make_production_settings(report_enabled=True, object_storage_backend="local")
+
+    valid = make_production_settings(
+        report_enabled=True,
+        object_storage_backend="s3",
+        s3_bucket="marketlens-reports",
+    )
+    assert valid.report_enabled is True

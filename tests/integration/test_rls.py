@@ -9,7 +9,15 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.context import tenant_context
-from app.db.models import Document, Organization, ResearchRun, Tenant, Workspace
+from app.db.models import (
+    Document,
+    Organization,
+    Report,
+    ResearchReview,
+    ResearchRun,
+    Tenant,
+    Workspace,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -33,6 +41,14 @@ _RLS_TABLES = {
     "research_checkpoints",
     "research_findings",
     "research_tool_calls",
+    "research_sources",
+    "research_evidence",
+    "research_claims",
+    "research_citations",
+    "research_reviews",
+    "reports",
+    "report_versions",
+    "report_export_jobs",
 }
 
 
@@ -285,6 +301,10 @@ async def test_research_runs_are_rls_protected(
     workspace_b = uuid4()
     run_a = uuid4()
     run_b = uuid4()
+    review_a = uuid4()
+    review_b = uuid4()
+    report_a = uuid4()
+    report_b = uuid4()
 
     with tenant_context(tenant_a):
         async with session_factory() as session:
@@ -309,6 +329,26 @@ async def test_research_runs_are_rls_protected(
                     graph_version="stage5-v1",
                     max_rounds=1,
                     max_attempts=1,
+                )
+            )
+            await session.flush()
+            session.add(
+                ResearchReview(
+                    id=review_a,
+                    tenant_id=tenant_a,
+                    root_run_id=run_a,
+                    workspace_id=workspace_a,
+                    max_attempts=1,
+                    rules_version="stage6-v1",
+                )
+            )
+            await session.flush()
+            session.add(
+                Report(
+                    id=report_a,
+                    tenant_id=tenant_a,
+                    root_run_id=run_a,
+                    workspace_id=workspace_a,
                 )
             )
             await session.commit()
@@ -338,6 +378,26 @@ async def test_research_runs_are_rls_protected(
                     max_attempts=1,
                 )
             )
+            await session.flush()
+            session.add(
+                ResearchReview(
+                    id=review_b,
+                    tenant_id=tenant_b,
+                    root_run_id=run_b,
+                    workspace_id=workspace_b,
+                    max_attempts=1,
+                    rules_version="stage6-v1",
+                )
+            )
+            await session.flush()
+            session.add(
+                Report(
+                    id=report_b,
+                    tenant_id=tenant_b,
+                    root_run_id=run_b,
+                    workspace_id=workspace_b,
+                )
+            )
             await session.commit()
 
     async with engine.connect() as connection:
@@ -348,6 +408,12 @@ async def test_research_runs_are_rls_protected(
             {"tenant_id": str(tenant_a)},
         )
         rows = (await connection.execute(text("SELECT id FROM research_runs"))).scalars().all()
+        report_rows = (await connection.execute(text("SELECT id FROM reports"))).scalars().all()
+        review_rows = (
+            (await connection.execute(text("SELECT id FROM research_reviews"))).scalars().all()
+        )
         await transaction.rollback()
 
     assert rows == [run_a]
+    assert report_rows == [report_a]
+    assert review_rows == [review_a]

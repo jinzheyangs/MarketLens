@@ -131,6 +131,8 @@ async def create_run(
         tenant_id=principal.tenant_id,
         workspace_id=workspace_id,
         project_id=project_id,
+        run_kind="primary",
+        followup_round=0,
         requested_by=principal.user_id,
         request_key=key,
         objective=normalized_objective,

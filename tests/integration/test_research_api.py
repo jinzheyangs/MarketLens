@@ -27,6 +27,8 @@ from app.collector.search import SearchHit
 from app.core.context import tenant_context
 from app.db.models import SourceSnapshot, WebSource, WorkspaceMembership
 from app.factory import create_app
+from app.reporting.runner import ExportRunner, ReviewRunner
+from app.reporting.service import ReviewServices
 from tests.conftest import make_settings, open_client
 from tests.integration.test_api_stage2 import (
     AUDIENCE,
@@ -93,6 +95,7 @@ class ResearchHarness:
     seed: Seed
     app: FastAPI
     services: AgentServices
+    review_services: ReviewServices
     session_factory: async_sessionmaker[AsyncSession]
     source_id: UUID
 
@@ -123,6 +126,12 @@ async def research_api(
         agent_max_rounds=1,
         agent_min_findings_for_followup=1,
         agent_max_task_attempts=1,
+        report_enabled=True,
+        report_auto_review=True,
+        report_max_followup_rounds=0,
+        report_review_poll_interval_seconds=0.1,
+        report_export_poll_interval_seconds=0.1,
+        report_min_independent_sources=1,
         agent_max_seconds=60,
         agent_task_timeout_seconds=30,
         collector_enabled=True,
@@ -143,7 +152,9 @@ async def research_api(
     )
     async with open_client(application) as client:
         services = application.state.agent_services
+        review_services = application.state.review_services
         assert isinstance(services, AgentServices)
+        assert isinstance(review_services, ReviewServices)
         assert services.collector_services is not None
         if services.collector_services.search_provider is not None:
             await services.collector_services.search_provider.aclose()
@@ -200,6 +211,7 @@ async def research_api(
             seed=seed,
             app=application,
             services=services,
+            review_services=review_services,
             session_factory=session_factory,
             source_id=source_id,
         )
@@ -229,6 +241,24 @@ async def _create_run(
 async def _run_worker(harness: ResearchHarness) -> int:
     runner = ResearchRunner(
         services=harness.services,
+        session_factory=harness.session_factory,
+    )
+    return await runner.run_once(tenant_ids=[harness.seed.tenant_a])
+
+
+async def _run_review_worker(harness: ResearchHarness) -> int:
+    runner = ReviewRunner(
+        settings=harness.app.state.settings,
+        services=harness.review_services,
+        session_factory=harness.session_factory,
+    )
+    return await runner.run_once(tenant_ids=[harness.seed.tenant_a])
+
+
+async def _run_export_worker(harness: ResearchHarness) -> int:
+    runner = ExportRunner(
+        settings=harness.app.state.settings,
+        services=harness.review_services,
         session_factory=harness.session_factory,
     )
     return await runner.run_once(tenant_ids=[harness.seed.tenant_a])
@@ -596,3 +626,203 @@ async def test_worker_does_not_claim_another_tenant_run(
     )
     assert detail_b.status_code == 200
     assert detail_b.json()["status"] == "pending"
+
+
+async def test_review_report_approval_and_export(
+    research_api: ResearchHarness,
+) -> None:
+    harness = research_api
+    created = await _create_run(harness, objective="Reported market opportunity")
+    await _run_worker(harness)
+    assert await _run_review_worker(harness) == 1
+
+    base = f"/api/v1/workspaces/{harness.seed.workspace_a}/research-runs/{created['id']}"
+    viewer = _auth(harness.seed.tokens["workspace_viewer_a"])
+    admin = _auth(harness.seed.tokens["workspace_admin_a"])
+    editor = _auth(harness.seed.tokens["workspace_editor_a"])
+
+    cross_tenant = await harness.client.get(
+        f"{base}/review",
+        headers=_auth(harness.seed.tokens["tenant_admin_b"]),
+    )
+    assert cross_tenant.status_code == 404
+
+    review = await harness.client.get(f"{base}/review", headers=viewer)
+    assert review.status_code == 200, review.text
+    assert review.json()["status"] == "completed"
+    assert review.json()["claim_count"] >= 1
+    assert review.json()["supported_count"] >= 1
+
+    claims = await harness.client.get(f"{base}/review/claims", headers=viewer)
+    assert claims.status_code == 200, claims.text
+    assert claims.json()
+    assert claims.json()[0]["citations"]
+    assert claims.json()[0]["citations"][0]["evidence"]["quote"]
+
+    report = await harness.client.get(f"{base}/report", headers=viewer)
+    assert report.status_code == 200, report.text
+    report_body = report.json()
+    assert report_body["status"] == "draft"
+    version_id = report_body["current_version_id"]
+
+    versions = await harness.client.get(f"{base}/report/versions", headers=viewer)
+    assert versions.status_code == 200
+    assert versions.json()[0]["version_number"] == 1
+
+    detail = await harness.client.get(
+        f"{base}/report/versions/{version_id}",
+        headers=viewer,
+    )
+    assert detail.status_code == 200, detail.text
+    assert "## Evidence Links" in detail.json()["content_markdown"]
+    assert detail.json()["structured"]["claims"]
+
+    forbidden_approve = await harness.client.post(
+        f"{base}/report/versions/{version_id}/approve",
+        headers=viewer,
+    )
+    assert forbidden_approve.status_code == 403
+
+    approved = await harness.client.post(
+        f"{base}/report/versions/{version_id}/approve",
+        headers=admin,
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "approved"
+
+    forbidden_export = await harness.client.post(
+        f"{base}/report/versions/{version_id}/exports",
+        headers=viewer,
+        json={"format": "markdown"},
+    )
+    assert forbidden_export.status_code == 403
+
+    queued = await harness.client.post(
+        f"{base}/report/versions/{version_id}/exports",
+        headers=editor,
+        json={"format": "markdown"},
+    )
+    assert queued.status_code == 202, queued.text
+    job_id = queued.json()["id"]
+    assert queued.json()["status"] == "pending"
+
+    assert await _run_export_worker(harness) == 1
+    job = await harness.client.get(f"{base}/report/exports/{job_id}", headers=viewer)
+    assert job.status_code == 200
+    assert job.json()["status"] == "succeeded"
+    assert job.json()["size_bytes"] > 0
+
+    download = await harness.client.get(
+        f"{base}/report/exports/{job_id}/download",
+        headers=viewer,
+    )
+    assert download.status_code == 200
+    assert download.content.startswith(b"# Research Report")
+    assert "attachment" in download.headers["content-disposition"]
+
+    audit = await harness.client.get(
+        "/api/v1/audit-events",
+        headers=_auth(harness.seed.tokens["tenant_admin_a"]),
+        params={"limit": 200},
+    )
+    assert audit.status_code == 200
+    actions = {event["action"] for event in audit.json()}
+    assert "report.version_approved" in actions
+    assert "report.export_succeeded" in actions
+
+
+async def test_report_versioning_after_manual_rereview(
+    research_api: ResearchHarness,
+) -> None:
+    harness = research_api
+    created = await _create_run(harness, objective="Versioned report")
+    await _run_worker(harness)
+    assert await _run_review_worker(harness) == 1
+    base = f"/api/v1/workspaces/{harness.seed.workspace_a}/research-runs/{created['id']}"
+    admin = _auth(harness.seed.tokens["workspace_admin_a"])
+    editor = _auth(harness.seed.tokens["workspace_editor_a"])
+    report = (await harness.client.get(f"{base}/report", headers=admin)).json()
+    first_version = report["current_version_id"]
+    approved = await harness.client.post(
+        f"{base}/report/versions/{first_version}/approve",
+        headers=admin,
+    )
+    assert approved.status_code == 200
+
+    queued = await harness.client.post(f"{base}/review", headers=editor)
+    assert queued.status_code == 202, queued.text
+    await _run_review_worker(harness)
+
+    report_after = await harness.client.get(f"{base}/report", headers=admin)
+    assert report_after.json()["status"] == "draft"
+    assert report_after.json()["current_version_id"] != first_version
+    versions = await harness.client.get(f"{base}/report/versions", headers=admin)
+    assert [item["version_number"] for item in versions.json()] == [2, 1]
+    assert versions.json()[0]["status"] == "draft"
+    assert versions.json()[1]["status"] == "approved"
+
+    rejected = await harness.client.post(
+        f"{base}/report/versions/{report_after.json()['current_version_id']}/reject",
+        headers=admin,
+        json={"reason": "Needs stronger independent corroboration"},
+    )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["status"] == "rejected"
+    assert rejected.json()["rejection_reason"] == "Needs stronger independent corroboration"
+    report_rejected = await harness.client.get(f"{base}/report", headers=admin)
+    assert report_rejected.json()["status"] == "rejected"
+
+
+async def test_review_creates_bounded_followup_and_downgrades_gaps(
+    research_api: ResearchHarness,
+) -> None:
+    harness = research_api
+    created = await _create_run(harness, objective="Follow-up evidence test")
+    await _run_worker(harness)
+    base = f"/api/v1/workspaces/{harness.seed.workspace_a}/research-runs/{created['id']}"
+
+    deleted = await harness.client.delete(
+        f"/api/v1/workspaces/{harness.seed.workspace_a}/sources/{harness.source_id}",
+        headers=_auth(harness.seed.tokens["workspace_admin_a"]),
+    )
+    assert deleted.status_code == 204, deleted.text
+
+    harness.app.state.settings.report_max_followup_rounds = 1
+    editor = _auth(harness.seed.tokens["workspace_editor_a"])
+    assert await _run_review_worker(harness) == 1
+    awaiting = await harness.client.get(f"{base}/review", headers=editor)
+    assert awaiting.status_code == 200, awaiting.text
+    assert awaiting.json()["status"] == "awaiting_followup"
+    followup_run_id = awaiting.json()["followup_run_id"]
+    assert followup_run_id is not None
+    assert awaiting.json()["followup_round"] == 1
+
+    assert await _run_worker(harness) == 1
+    followup_run = await harness.client.get(
+        f"/api/v1/workspaces/{harness.seed.workspace_a}/research-runs/{followup_run_id}",
+        headers=editor,
+    )
+    assert followup_run.status_code == 200
+    assert followup_run.json()["run_kind"] == "followup"
+    assert followup_run.json()["root_run_id"] == created["id"]
+    assert followup_run.json()["status"] == "failed"
+
+    assert await _run_review_worker(harness) == 1
+    completed = await harness.client.get(f"{base}/review", headers=editor)
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["followup_round"] == 1
+    assert completed.json()["invalid_count"] >= 1
+
+    report = await harness.client.get(f"{base}/report", headers=editor)
+    assert report.status_code == 200
+    version_id = report.json()["current_version_id"]
+    version = await harness.client.get(
+        f"{base}/report/versions/{version_id}",
+        headers=editor,
+    )
+    assert version.status_code == 200
+    body = version.json()
+    assert body["structured"]["followup_round"] == 1
+    assert "Insufficient evidence" in body["content_markdown"]
+    assert "Conflicts and Gaps" in body["content_markdown"]
