@@ -137,6 +137,37 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda:9092
+    ports:
+      - "127.0.0.1:9092:9092"
+    restart: unless-stopped
+
+  temporal:
+    image: temporalio/temporal:1.25.2
+    command: ["server", "start-dev", "--ip", "0.0.0.0"]
+    ports:
+      - "127.0.0.1:7233:7233"
+      - "127.0.0.1:8233:8233"
+    restart: unless-stopped
+
   agent:
     image: market-intel-api:local
     build:
@@ -156,6 +187,9 @@ services:
       S3_USE_SSL: "false"
       S3_ADDRESSING_STYLE: path
       S3_AUTO_CREATE_BUCKET: "true"
+      TEMPORAL_HOST: temporal:7233
+      TEMPORAL_TLS: "false"
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
     command: ["python", "-m", "app.agent.worker"]
     volumes:
       - rag_data:/app/.data
@@ -167,6 +201,31 @@ services:
       qdrant:
         condition: service_started
       minio:
+        condition: service_started
+      temporal:
+        condition: service_started
+      redpanda:
+        condition: service_started
+    restart: unless-stopped
+
+  events:
+    image: market-intel-api:local
+    build:
+      context: .
+      target: runtime
+    env_file:
+      - .env
+    environment:
+      # Outbox dispatcher and Kafka consumer; no inbound port.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-market_intel}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-market_intel}
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+    command: ["python", "-m", "app.events.worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      redpanda:
         condition: service_started
     restart: unless-stopped
 

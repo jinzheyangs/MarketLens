@@ -8,6 +8,7 @@ from app.db.models.collector import (
     WebSource,
 )
 from app.db.models.document import Document, DocumentChunk, DocumentVersion
+from app.db.models.events import DomainEvent, EventConsumerFailure, ProcessedEvent
 from app.db.models.membership import (
     OrganizationMembership,
     ProjectMembership,
@@ -42,8 +43,11 @@ __all__ = [
     "Document",
     "DocumentChunk",
     "DocumentVersion",
+    "DomainEvent",
+    "EventConsumerFailure",
     "Organization",
     "OrganizationMembership",
+    "ProcessedEvent",
     "Project",
     "ProjectMembership",
     "Report",

@@ -49,6 +49,9 @@ _RLS_TABLES = {
     "reports",
     "report_versions",
     "report_export_jobs",
+    "domain_events",
+    "event_consumer_failures",
+    "processed_events",
 }
 
 

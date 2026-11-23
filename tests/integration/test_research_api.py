@@ -25,7 +25,7 @@ from app.auth.oidc import JWTVerifier
 from app.auth.principal import resolve_principal_for_user
 from app.collector.search import SearchHit
 from app.core.context import tenant_context
-from app.db.models import SourceSnapshot, WebSource, WorkspaceMembership
+from app.db.models import DomainEvent, SourceSnapshot, WebSource, WorkspaceMembership
 from app.factory import create_app
 from app.reporting.runner import ExportRunner, ReviewRunner
 from app.reporting.service import ReviewServices
@@ -826,3 +826,46 @@ async def test_review_creates_bounded_followup_and_downgrades_gaps(
     assert body["structured"]["followup_round"] == 1
     assert "Insufficient evidence" in body["content_markdown"]
     assert "Conflicts and Gaps" in body["content_markdown"]
+
+
+async def test_event_admin_api_lists_and_replays_failed_events(
+    research_api: ResearchHarness,
+) -> None:
+    harness = research_api
+    await _create_run(harness, objective="Event API test")
+    admin = _auth(harness.seed.tokens["tenant_admin_a"])
+    viewer = _auth(harness.seed.tokens["workspace_viewer_a"])
+
+    forbidden = await harness.client.get("/api/v1/events", headers=viewer)
+    assert forbidden.status_code == 403
+
+    listing = await harness.client.get(
+        "/api/v1/events",
+        headers=admin,
+        params={"event_type": "research_run.created"},
+    )
+    assert listing.status_code == 200, listing.text
+    assert listing.json()
+    event_id = listing.json()[0]["id"]
+
+    with tenant_context(harness.seed.tenant_a):
+        async with harness.session_factory() as session, session.begin():
+            event = await session.scalar(
+                select(DomainEvent).where(DomainEvent.id == UUID(event_id))
+            )
+            assert event is not None
+            event.status = "failed"
+            event.last_error = "forced"
+
+    replayed = await harness.client.post(
+        f"/api/v1/events/{event_id}/retry",
+        headers=admin,
+    )
+    assert replayed.status_code == 200, replayed.text
+    assert replayed.json()["status"] == "pending"
+
+    failures = await harness.client.get(
+        "/api/v1/events/consumer-failures",
+        headers=admin,
+    )
+    assert failures.status_code == 200

@@ -13,6 +13,7 @@ from app.api.v1 import (
     audit,
     collector,
     documents,
+    events,
     me,
     organizations,
     projects,
@@ -36,4 +37,5 @@ router.include_router(documents.router)
 router.include_router(collector.router)
 router.include_router(research.router)
 router.include_router(reports.router)
+router.include_router(events.router)
 router.include_router(audit.router)

@@ -55,19 +55,25 @@
     只能操作当前 draft version；只有 approved version 可导出。导出 job 使用 lease/重试/
     fencing，对象 key 服务端生成，下载前重新授权且不暴露内部 key。不得把未审批 draft 对外
     导出或宣称合规/事实核查已完成。
-15. **错误与日志**：业务错误使用 `AppError` 和稳定错误码；不在响应中返回堆栈、DSN、token
+15. **事件与工作流**：业务/审计事件必须通过 transactional outbox 与业务同事务写入，
+    事件 schema 必须版本化；Kafka publisher/consumer 必须处理至少一次投递、consumer
+    idempotency、有限重试和死信。不得在业务事务内直接发 Kafka，不得把 Redis 当权威
+    状态。Temporal workflow 只编排 activities，不直接访问 DB/网络；workflow ID、
+    starter marker、activity 和业务 run 必须幂等。每张 event/processed/failure 表必须
+    tenant scoped + RLS；生产必须启用 Kafka/Temporal TLS 并验证真实服务恢复。
+16. **错误与日志**：业务错误使用 `AppError` 和稳定错误码；不在响应中返回堆栈、DSN、token
    或上游原文。日志使用结构化 `extra={"context": ...}`，敏感 key 由 formatter 脱敏；不记录
    body/header/查询串/token/文档正文/网页原文/文件名。
-16. **迁移**：数据库变更必须通过 Alembic revision；禁止手工改生产库。约束/索引显式命名，
+17. **迁移**：数据库变更必须通过 Alembic revision；禁止手工改生产库。约束/索引显式命名，
     与 `NAMING_CONVENTION` 一致。不要修改已合并的迁移，新增 revision。新增租户表必须同时
     启用 RLS 策略与租户复合外键（如适用）。
-17. **测试**：新增行为必须有测试；租户/权限/身份/外部输入/检索/网络边界必须有负向测试。
+18. **测试**：新增行为必须有测试；租户/权限/身份/外部输入/检索/网络边界必须有负向测试。
     单元测试不得依赖真实外部网络；集成测试使用 `TEST_DATABASE_URL`（库名含 `test`）。
     RAG 测试可使用 qdrant-client 内存模式与本地对象存储；采集测试使用本地 HTTP server、
     注入 resolver 和 fake Provider，不依赖真实供应商。
-18. **类型与风格**：`ruff check .`、`ruff format --check .`、`mypy app` 必须通过。公共函数写
+19. **类型与风格**：`ruff check .`、`ruff format --check .`、`mypy app` 必须通过。公共函数写
     类型标注与必要 docstring；注释解释“为什么”，不复述代码。
-19. **依赖与安全**：新增依赖需说明用途与许可证；不在运行时拉取未固定来源的代码。外部内容
+20. **依赖与安全**：新增依赖需说明用途与许可证；不在运行时拉取未固定来源的代码。外部内容
     不得进入 `eval/exec/pickle` 等危险路径。LangGraph 只接收 schema 化状态，不执行模型返回
     的代码或工具名。
 
@@ -83,6 +89,10 @@
   不得暴露写工具或信任模型/证据内容。
 - `app/reporting`：claim/evidence/citation 派生、确定性 Reviewer、报告版本、审批、导出
   worker；不得让模型输出替代来源校验，不得绕过 root run ACL。
+- `app/events`：outbox、Kafka publisher/consumer、event schema、幂等与死信；不把事件
+  当唯一业务事实，不记录敏感原文。
+- `app/workflow`：Temporal workflow/activities/starter；workflow 代码必须确定性，DB
+  访问只在 activity，不能绕过 tenant/authorization。
 - `app/services`：业务编排、审计、外部协作；不直接依赖 FastAPI。
 - `app/db`：模型、会话、租户守卫、RLS 与查询辅助；不向上层返回 ORM 细节给外部契约。
 - `app/core`：配置、上下文、错误、日志、中间件、telemetry；不得依赖业务模块。

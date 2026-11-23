@@ -226,6 +226,39 @@ class Settings(BaseSettings):
     report_max_concurrent_exports: int = Field(default=2, ge=1, le=16)
     report_max_export_bytes: int = Field(default=20_000_000, ge=1_024, le=100_000_000)
 
+    # Transactional outbox and Kafka event bus.
+    events_outbox_enabled: bool = True
+    event_publisher: Literal["log", "kafka"] = "log"
+    event_topic: str = "marketlens.domain-events"
+    event_dead_letter_topic: str = "marketlens.domain-events.dead-letter"
+    event_consumer_enabled: bool = False
+    event_consumer_group: str = "marketlens-backend"
+    kafka_bootstrap_servers: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    kafka_client_id: str = "marketlens-events"
+    kafka_security_protocol: Literal["PLAINTEXT", "SSL", "SASL_PLAINTEXT", "SASL_SSL"] = "PLAINTEXT"
+    kafka_sasl_mechanism: str | None = None
+    kafka_sasl_username: str | None = None
+    kafka_sasl_password: SecretStr | None = Field(default=None, repr=False)
+    kafka_ssl_cafile: str | None = None
+    event_outbox_poll_interval_seconds: float = Field(default=2.0, ge=0.1, le=60)
+    event_outbox_batch_size: int = Field(default=100, ge=1, le=1_000)
+    event_outbox_max_attempts: int = Field(default=8, ge=1, le=50)
+    event_outbox_retry_base_seconds: float = Field(default=1.0, ge=0.1, le=300)
+    event_outbox_retry_max_seconds: float = Field(default=300.0, ge=1, le=3_600)
+    event_outbox_lease_seconds: int = Field(default=60, ge=10, le=600)
+    event_consumer_max_attempts: int = Field(default=3, ge=1, le=20)
+    event_consumer_poll_timeout_ms: int = Field(default=1_000, ge=100, le=30_000)
+
+    # Temporal durable cross-service orchestration.
+    temporal_enabled: bool = False
+    temporal_host: str | None = None
+    temporal_tls: bool = False
+    temporal_namespace: str = "default"
+    temporal_task_queue: str = "marketlens-research"
+    temporal_poll_interval_seconds: float = Field(default=5.0, ge=0.5, le=300)
+    temporal_workflow_max_seconds: int = Field(default=86_400, ge=60, le=2_592_000)
+    temporal_activity_timeout_seconds: int = Field(default=300, ge=10, le=3_600)
+
     # HTTP / API behavior.
     log_level: LogLevel = "INFO"
     log_format: Literal["json", "console"] = "json"
@@ -279,6 +312,7 @@ class Settings(BaseSettings):
         "s3_secret_key",
         "web_search_api_key",
         "agent_api_key",
+        "kafka_sasl_password",
         mode="before",
     )
     @classmethod
@@ -339,6 +373,51 @@ class Settings(BaseSettings):
     @classmethod
     def _validate_agent_api_url(cls, value: str | None) -> str | None:
         return _validate_service_url(value, "AGENT_API_URL")
+
+    @field_validator("kafka_bootstrap_servers")
+    @classmethod
+    def _normalize_kafka_brokers(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            candidate = value.strip()
+            if not candidate:
+                continue
+            if "://" in candidate or "/" in candidate or " " in candidate:
+                raise ValueError("KAFKA_BOOTSTRAP_SERVERS entries must be host:port")
+            host, separator, port = candidate.rpartition(":")
+            if not separator or not host or not port.isdigit() or not 1 <= int(port) <= 65_535:
+                raise ValueError("KAFKA_BOOTSTRAP_SERVERS entries must be host:port")
+            if candidate not in normalized:
+                normalized.append(candidate)
+        return normalized
+
+    @field_validator("event_topic", "event_dead_letter_topic")
+    @classmethod
+    def _validate_kafka_topic(cls, value: str) -> str:
+        candidate = value.strip()
+        if not candidate or len(candidate) > 249:
+            raise ValueError("Kafka topic names must be non-empty and at most 249 characters")
+        if any(
+            character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+            for character in candidate
+        ):
+            raise ValueError("Kafka topic names may contain only letters, digits, '.', '_' or '-'")
+        return candidate
+
+    @field_validator("temporal_host")
+    @classmethod
+    def _validate_temporal_host(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        candidate = value.strip()
+        if not candidate:
+            return None
+        if "://" in candidate or "/" in candidate or " " in candidate:
+            raise ValueError("TEMPORAL_HOST must be host:port without a scheme or path")
+        host, separator, port = candidate.rpartition(":")
+        if not separator or not host or not port.isdigit() or not 1 <= int(port) <= 65_535:
+            raise ValueError("TEMPORAL_HOST must be host:port")
+        return candidate
 
     @field_validator("web_search_api_key_header")
     @classmethod
@@ -467,6 +546,7 @@ class Settings(BaseSettings):
         "collector_blocked_domains",
         "collector_allowed_ports",
         "collector_allowed_content_types",
+        "kafka_bootstrap_servers",
         mode="before",
     )
     @classmethod
@@ -619,6 +699,29 @@ class Settings(BaseSettings):
             raise ValueError("AGENT_PROVIDER=http requires AGENT_API_URL")
         if self.report_enabled and self.object_storage_backend == "s3" and not self.s3_bucket:
             raise ValueError("REPORT_ENABLED with S3 requires S3_BUCKET")
+        if self.event_publisher == "kafka" and not self.kafka_bootstrap_servers:
+            raise ValueError("EVENT_PUBLISHER=kafka requires KAFKA_BOOTSTRAP_SERVERS")
+        if self.event_consumer_enabled and not self.kafka_bootstrap_servers:
+            raise ValueError("EVENT_CONSUMER_ENABLED requires KAFKA_BOOTSTRAP_SERVERS")
+        if self.temporal_enabled and not self.temporal_host:
+            raise ValueError("TEMPORAL_ENABLED requires TEMPORAL_HOST")
+        if self.kafka_security_protocol.startswith("SASL") and not (
+            self.kafka_sasl_mechanism
+            and self.kafka_sasl_username
+            and self.kafka_sasl_password is not None
+        ):
+            raise ValueError(
+                "SASL Kafka protocols require KAFKA_SASL_MECHANISM, "
+                "KAFKA_SASL_USERNAME, and KAFKA_SASL_PASSWORD"
+            )
+        if self.event_outbox_retry_base_seconds > self.event_outbox_retry_max_seconds:
+            raise ValueError(
+                "EVENT_OUTBOX_RETRY_BASE_SECONDS must not exceed EVENT_OUTBOX_RETRY_MAX_SECONDS"
+            )
+        if self.temporal_activity_timeout_seconds > self.temporal_workflow_max_seconds:
+            raise ValueError(
+                "TEMPORAL_ACTIVITY_TIMEOUT_SECONDS must not exceed TEMPORAL_WORKFLOW_MAX_SECONDS"
+            )
         if self.agent_max_output_tokens_per_call > self.agent_max_output_tokens:
             raise ValueError(
                 "AGENT_MAX_OUTPUT_TOKENS_PER_CALL must not exceed AGENT_MAX_OUTPUT_TOKENS"
@@ -705,6 +808,22 @@ class Settings(BaseSettings):
                     raise ValueError("S3_USE_SSL must be true in production")
                 if self.s3_endpoint_url and urlparse(self.s3_endpoint_url).scheme != "https":
                     raise ValueError("S3_ENDPOINT_URL must use https in production")
+            if not self.events_outbox_enabled:
+                raise ValueError("EVENTS_OUTBOX_ENABLED must be true in production")
+            if self.event_publisher != "kafka":
+                raise ValueError("EVENT_PUBLISHER must be kafka in production")
+            if not self.kafka_bootstrap_servers:
+                raise ValueError("KAFKA_BOOTSTRAP_SERVERS must be configured in production")
+            if self.kafka_security_protocol not in {"SSL", "SASL_SSL"}:
+                raise ValueError("Kafka must use TLS (SSL or SASL_SSL) in production")
+            if not self.event_consumer_enabled:
+                raise ValueError("EVENT_CONSUMER_ENABLED must be true in production")
+            if not self.temporal_enabled:
+                raise ValueError("TEMPORAL_ENABLED must be true in production")
+            if not self.temporal_host:
+                raise ValueError("TEMPORAL_HOST must be configured in production")
+            if not self.temporal_tls:
+                raise ValueError("TEMPORAL_TLS must be true in production")
         return self
 
     @property

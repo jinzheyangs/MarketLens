@@ -53,6 +53,16 @@ def make_production_settings(**overrides: Any) -> Settings:
         "oidc_issuer": "https://idp.example.com",
         "oidc_audience": "marketlens",
         "oidc_jwks_uri": "https://idp.example.com/jwks",
+        "temporal_enabled": True,
+        "temporal_host": "temporal.example.com:7233",
+        "temporal_tls": True,
+        "event_publisher": "kafka",
+        "kafka_bootstrap_servers": ["kafka.example.com:9093"],
+        "kafka_security_protocol": "SASL_SSL",
+        "kafka_sasl_mechanism": "SCRAM-SHA-512",
+        "kafka_sasl_username": "marketlens",
+        "kafka_sasl_password": "test-only-kafka-password",
+        "event_consumer_enabled": True,
     }
     values.update(overrides)
     return make_settings(**values)

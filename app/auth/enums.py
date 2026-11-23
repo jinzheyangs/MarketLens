@@ -78,6 +78,8 @@ class ResourceType(StrEnum):
     REPORT = "report"
     REPORT_VERSION = "report_version"
     REPORT_EXPORT = "report_export"
+    DOMAIN_EVENT = "domain_event"
+    EVENT_CONSUMER_FAILURE = "event_consumer_failure"
 
 
 class Permission(StrEnum):
@@ -106,6 +108,8 @@ class Permission(StrEnum):
     REPORT_READ = "report:read"
     REPORT_APPROVE = "report:approve"
     REPORT_EXPORT = "report:export"
+    EVENT_READ = "event:read"
+    EVENT_MANAGE = "event:manage"
 
     USER_READ = "user:read"
     USER_MANAGE = "user:manage"
@@ -155,4 +159,5 @@ class AuditAction(StrEnum):
     REPORT_EXPORT_QUEUED = "report.export_queued"
     REPORT_EXPORT_SUCCEEDED = "report.export_succeeded"
     REPORT_EXPORT_FAILED = "report.export_failed"
+    EVENT_REPLAYED = "event.replayed"
     AUTHORIZATION_DENIED = "authorization.denied"

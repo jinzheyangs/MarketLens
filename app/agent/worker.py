@@ -94,6 +94,19 @@ def main(argv: list[str] | None = None) -> int:
                 await collector_services.ensure_ready()
             if review_services is not None:
                 await review_services.ensure_ready()
+            if settings.temporal_enabled:
+                if args.once:
+                    logger.error("temporal worker requires long-running mode")
+                    return
+                from app.workflow.worker import run_workflow_worker
+
+                await run_workflow_worker(
+                    settings=settings,
+                    session_factory=session_factory,
+                    agent_services=agent_services,
+                    review_services=review_services,
+                )
+                return
             if args.once:
                 researched, reviewed, exported = await run_batch()
                 logger.info(

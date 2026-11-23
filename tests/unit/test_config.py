@@ -448,3 +448,42 @@ def test_production_report_requires_s3() -> None:
         s3_bucket="marketlens-reports",
     )
     assert valid.report_enabled is True
+
+
+def test_event_bus_and_temporal_configuration() -> None:
+    with pytest.raises(ValidationError):
+        make_settings(event_publisher="kafka")
+    with pytest.raises(ValidationError):
+        make_settings(kafka_security_protocol="SASL_SSL")
+    with pytest.raises(ValidationError):
+        make_settings(
+            kafka_security_protocol="SASL_SSL",
+            kafka_sasl_mechanism="SCRAM-SHA-512",
+            kafka_sasl_username="user",
+        )
+    with pytest.raises(ValidationError):
+        make_settings(temporal_enabled=True)
+    with pytest.raises(ValidationError):
+        make_settings(temporal_host="https://temporal.example.com:7233")
+
+    settings = make_settings(
+        event_publisher="kafka",
+        kafka_bootstrap_servers="kafka-a:9092, kafka-b:9093",
+        temporal_enabled=True,
+        temporal_host="temporal.example.com:7233",
+    )
+    assert settings.kafka_bootstrap_servers == ["kafka-a:9092", "kafka-b:9093"]
+    assert settings.temporal_host == "temporal.example.com:7233"
+
+
+def test_production_event_bus_and_temporal_hardening() -> None:
+    with pytest.raises(ValidationError):
+        make_production_settings(event_publisher="log")
+    with pytest.raises(ValidationError):
+        make_production_settings(temporal_enabled=False)
+    with pytest.raises(ValidationError):
+        make_production_settings(temporal_tls=False)
+    with pytest.raises(ValidationError):
+        make_production_settings(event_consumer_enabled=False)
+    with pytest.raises(ValidationError):
+        make_production_settings(kafka_security_protocol="PLAINTEXT")

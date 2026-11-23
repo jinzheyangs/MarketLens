@@ -3,12 +3,13 @@
 面向企业团队的市场情报与调研平台后端。最终架构与交付阶段见
 [`docs/项目蓝图.md`](docs/项目蓝图.md)。
 
-> **当前实现范围：阶段 6「证据审查与交付报告」。**
+> **当前实现范围：阶段 7「持久工作流与事件体系」。**
 > 已完成：阶段 1 工程底座、阶段 2 身份/租户/RBAC/ABAC/审计、阶段 3 资料摄取/RAG、
-> 阶段 4 搜索/安全采集、阶段 5 LangGraph Supervisor/专业 Agent/预算/检查点，以及
-> 阶段 6 的 source/evidence/claim/citation 实体、确定性 Reviewer、有限补查、
-> 引用完整性/新鲜度/独立性/冲突检查、报告版本、人工审批、导出任务与下载 API。
-> 尚未实现：Temporal/Kafka（阶段 7）、监测与协作（阶段 8）等。
+> 阶段 4 搜索/安全采集、阶段 5 LangGraph Supervisor/专业 Agent、阶段 6 证据审查/
+> 报告/审批/导出，以及阶段 7 的 transactional outbox、版本化 domain event、Kafka
+> producer/consumer、消费幂等/死信、Temporal research lifecycle workflow、活动重试/
+> 恢复和事件管理 API。
+> 尚未实现：企业监测与协作（阶段 8）、生产运营治理（阶段 9）等。
 
 ## 技术栈
 
@@ -20,6 +21,7 @@
 - 可配置外部搜索 Provider、隔离采集 worker（SSRF/DNS pinning/robots）
 - LangGraph 1.x（MIT；Supervisor + 专业 Agent、并行 fan-out、应用级持久检查点）
 - 报告导出：Markdown + DOCX（python-docx，MIT）；PDF/表格导出尚未实现
+- Transactional outbox、Kafka（aiokafka）、Temporal Python SDK
 - OpenTelemetry（可选，OTLP/HTTP）
 - pytest / pytest-asyncio、Ruff、mypy（strict）、GitHub Actions
 - Docker / Docker Compose
@@ -39,6 +41,8 @@ app/
   collector/           # 搜索 Provider、SSRF 安全抓取、robots、worker、来源/快照
   agent/               # LangGraph Supervisor、专业 Agent、只读工具、预算、runner/worker
   reporting/           # Reviewer、claim/evidence/citation、报告生成、审批、导出/worker
+  events/              # outbox dispatcher、Kafka publisher/consumer、死信与事件管理
+  workflow/            # Temporal workflow、activities、starter、worker 模式
   schemas/             # API schema
   services/            # 租户/成员/用户/审计/文档/RAG 编排
 alembic/               # 迁移
@@ -94,13 +98,21 @@ python -m app.collector.worker
 
 # 另开进程运行研究/审查/导出 worker（AGENT_ENABLED=true 时）
 python -m app.agent.worker
+
+# 另开进程运行 outbox dispatcher / Kafka consumer（可选 consumer）
+python -m app.events.worker
 ```
 
-同一个 `agent` worker 依次处理 research、review、export 队列；`REPORT_ENABLED=true`
-时每次研究完成后会自动排入审查任务。报告只有人工 approve 后才能导出。
+`agent` worker 有两种模式：`TEMPORAL_ENABLED=false` 时使用 PostgreSQL 队列；true 时
+启动 Temporal Worker + outbox starter，并保留 review/export 安全循环。
+`events` worker 负责将 transactional outbox 派发到 Kafka（开发可 `log`），并按
+consumer group 做幂等消费和死信记录。
 
 或使用 Makefile（`make install-dev`、`make migrate`、`make run`）。
-Docker Compose 会同时启动 `collector` 与 `agent` worker；两者都没有入站端口。
+Docker Compose 会同时启动 `collector`、`agent`、`events` worker，以及本地
+Redpanda/Temporal；worker 都没有入站端口。`.env.example` 默认使用 log publisher 和
+DB queue，不要求 Kafka/Temporal 即可启动；设置 `EVENT_PUBLISHER=kafka`、
+`EVENT_CONSUMER_ENABLED=true`、`TEMPORAL_ENABLED=true` 后切换到真实事件/工作流模式。
 `.env.example` 默认使用 `AGENT_PROVIDER=deterministic` 的本地确定性模型契约桩，
 只用于开发和接口验证；生产必须配置 `AGENT_PROVIDER=http` 与受控 https 模型网关。
 
@@ -334,8 +346,48 @@ market-intel provision-user \
   Review/export 由 `agent` worker 执行，因此需要 `AGENT_ENABLED=true` 并启动该 worker。
 - **已知 ACL 边界**：报告继承 root run 的 workspace/project 读取 ACL，不逐条重鉴权
   原始来源；项目成员可能看到 root research run 中已授权证据的摘录。原始来源删除后，
-  review 会标记 citation invalid，但既有报告版本和审计记录保留。阶段 7/8 可增加引用级
+  review 会标记 citation invalid，但既有报告版本和审计记录保留。阶段 8/9 可增加引用级
   ACL 与数据保留策略。
+
+## 持久工作流与事件体系（阶段 7）
+
+- **Transactional outbox**：关键审计/业务变更与 domain event 在同一数据库事务写入
+  `domain_events`。事件使用稳定 `event_id`、`event_type`、`event_version`、
+  aggregate、tenant、partition key、idempotency key、payload/header。outbox 行带
+  RLS、状态机（pending/publishing/published/failed）、lease、attempts、退避与终态
+  error。
+- **Kafka 发布**：`app.events.worker` 遍历 active tenant，使用
+  `FOR UPDATE SKIP LOCKED` 认领 outbox，发布后标记 published。发布失败按配置退避；
+  超过上限进入 failed（可查询/人工 replay）。Kafka producer 使用 `acks=all`、
+  idempotence、TLS/SASL 配置；生产强制 TLS。
+- **事件契约**：事件 envelope 为版本化 JSON；event_version 目前为 1，未知版本由 consumer
+  记录为死信。Kafka topic 与 dead-letter topic 均可配置；partition key 保持同一聚合
+  在单 partition 内有序。
+- **消费幂等**：`processed_events` 以 `(tenant, consumer, event_id)` 唯一约束标记每个
+  consumer 已处理事件；handler 副作用与 processed 标记同事务，重复投递不会重复执行。
+  handler 失败会重试；达到上限后写入 `event_consumer_failures` 死信记录。
+- **Temporal research lifecycle**：`ResearchLifecycleWorkflow` 是确定性 workflow，
+  通过 activities 调用现有 research/review/export durable workers。workflow 检查
+  run/review 状态、支持 pause/resume（数据库状态）和 cancel、activity 超时/重试，
+  直到 run terminal 且 review terminal（或没有 review）；workflow ID 为
+  `research-lifecycle-{run_id}`。
+- **Temporal starter**：Temporal Worker 内的 starter 从 outbox 的
+  `research_run.created` 事件启动 workflow，使用 `processed_events` 标记和
+  `REJECT_DUPLICATE` reuse policy，确保重复启动/服务重启不会创建重复工作流；follow-up
+  run 由 root workflow 的 batch activities 处理，不单独启动。
+- **运行模式**：`TEMPORAL_ENABLED=false` 时 `agent` worker 使用 PostgreSQL 队列；
+  true 时启动 Temporal Worker、starter 和 review/export 安全循环。`events` worker
+  独立运行 outbox dispatcher；Kafka consumer 在 `EVENT_CONSUMER_ENABLED=true` 时运行。
+- **管理 API**：tenant admin 可查询 outbox 状态/类型、重放 failed event、查看 consumer
+  dead letter。重放会重新进入 pending 并写审计；consumer 失败记录保留 payload 供后续
+  人工处理。
+- **生产约束**：生产配置强制 outbox、Kafka、consumer、Temporal、Kafka TLS、
+  Temporal TLS；Redis 不作为任务/事件事实来源。Temporal 返回/事件消费都需要
+  租户上下文和显式 tenant filter。
+- `EVENTS_OUTBOX_ENABLED=false` 时 dispatcher 不运行，但审计仍会写入 outbox
+  （配置主要用于维护/禁用派发，不作为删除审计的手段）。Kafka/Temporal 真实服务未在
+  本机启动，测试使用 recording publisher、fake Temporal client 和 Temporal test
+  environment。
 
 ## 多租户与数据库约束
 
@@ -399,6 +451,9 @@ market-intel provision-user \
 | GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/report/exports[/{job_id}]` | report read |
 | GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/report/exports/{job_id}/download` | report read（仅已完成） |
 | GET | `/api/v1/audit-events` | tenant_admin |
+| GET | `/api/v1/events` | tenant_admin（outbox 状态/类型过滤） |
+| POST | `/api/v1/events/{id}/retry` | tenant_admin（仅 failed event replay） |
+| GET | `/api/v1/events/consumer-failures` | tenant_admin（consumer dead letter） |
 
 研究 run 创建示例（随后由 `python -m app.agent.worker` 执行）：
 
@@ -475,6 +530,14 @@ POST /api/v1/workspaces/{workspace_id}/research-runs
 | `REPORT_MAX_CONTENT_CHARS` / `REPORT_MAX_EXPORT_BYTES` | 报告内容/导出文件上限 |
 | `REPORT_REVIEW_*` / `REPORT_MAX_CONCURRENT_REVIEWS` | review lease、重试、轮询与并发 |
 | `REPORT_EXPORT_*` / `REPORT_MAX_CONCURRENT_EXPORTS` | export lease、重试、轮询与并发 |
+| `EVENTS_OUTBOX_ENABLED` / `EVENT_PUBLISHER` | outbox 总开关 / `log` 或 `kafka`；生产必须 kafka |
+| `EVENT_TOPIC` / `EVENT_DEAD_LETTER_TOPIC` / `EVENT_CONSUMER_GROUP` | Kafka topic、死信 topic、consumer group |
+| `KAFKA_BOOTSTRAP_SERVERS` / `KAFKA_SECURITY_PROTOCOL` / `KAFKA_SASL_*` | Kafka broker 与 TLS/SASL；生产必须 TLS |
+| `EVENT_OUTBOX_*` | dispatcher batch/lease/attempt/退避/轮询 |
+| `EVENT_CONSUMER_ENABLED` / `EVENT_CONSUMER_MAX_ATTEMPTS` | consumer 开关、重试/死信上限 |
+| `TEMPORAL_ENABLED` / `TEMPORAL_HOST` / `TEMPORAL_TLS` | Temporal 开关、host:port、生产必须 TLS |
+| `TEMPORAL_NAMESPACE` / `TEMPORAL_TASK_QUEUE` | workflow 命名空间和 task queue |
+| `TEMPORAL_POLL_INTERVAL_SECONDS` / `TEMPORAL_WORKFLOW_MAX_SECONDS` / `TEMPORAL_ACTIVITY_TIMEOUT_SECONDS` | workflow/activity 预算 |
 | `OIDC_ENABLED` | production 必须为 true |
 | `OIDC_ISSUER` / `OIDC_AUDIENCE` / `OIDC_JWKS_URI` | 签发方、受众、JWKS；production 必须 https |
 | `OIDC_ALGORITHMS` | 非对称算法列表，默认 `RS256` |
@@ -492,7 +555,9 @@ POST /api/v1/workspaces/{workspace_id}/research-runs
 https endpoint，并禁止本地 Qdrant 模式与自动建桶；启用采集时禁止私网目标、只允许
 80/443、要求 S3/TLS，搜索 Provider URL 必须 https；启用 Agent 时 `AGENT_PROVIDER`
 必须为 `http`，`AGENT_API_URL` 必须为 https；启用报告时要求 S3/TLS 与 bucket。
-敏感字段不出现在 `repr`；日志对 token/authorization/password/api_key 等 key 递归脱敏。
+阶段 7 在生产还强制 outbox、Kafka、consumer 启用，Kafka 必须 SSL/SASL_SSL，
+Temporal 启用且 TLS。敏感字段不出现在 `repr`；日志对
+token/authorization/password/api_key 等 key 递归脱敏。
 
 > embedding 模型/版本或维度变更后必须重建索引（重新索引现有版本或写入新版本）；
 > Qdrant collection 维度不匹配会阻止启动。
@@ -506,7 +571,8 @@ https endpoint，并禁止本地 Qdrant 模式与自动建桶；启用采集时�
   `research_run.created/paused/resumed/canceled/completed/failed/budget_exhausted`、
   `research_review.queued/started/awaiting_followup/completed/failed/followup_created`、
   `report.version_created/version_approved/version_rejected`、
-  `report.export_queued/export_succeeded/export_failed`，与业务变更同事务写入。
+  `report.export_queued/export_succeeded/export_failed`、`event.replayed`，与业务变更
+  同事务写入。
 - 失败/拒绝：`authorization.denied`、`document.index_failed`、`document.delete_failed`、
   `collection.task_failed`、`source.delete_failed`、`research_review.failed`、
   `report.export_failed`，用独立短事务/终态事务写入，避免请求回滚后丢失。
@@ -560,6 +626,12 @@ claim/citation 派生、引用校验、source 删除后 citation invalid、有�
 降级报告、报告版本、人工审批权限、审批/导出审计、checksum 完整性、Markdown 导出
 任务/下载、重新 review 生成新版本、跨租户报告 404、报告表 RLS。
 
+阶段 7 单元测试覆盖 Temporal workflow 的状态推进（本地 time-skipping test env）、
+events/Temporal 配置生产强校验。集成测试覆盖 outbox 发布/重复不重发、publishing
+lease 崩溃恢复、失败退避/死信/tenant admin replay、consumer processed_events 幂等、
+handler 失败死信、Temporal starter 幂等和 followup 跳过、事件管理 API 权限，以及
+event 表 RLS。
+
 CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升级/回滚/再升级、
 `alembic check`、全部测试，并构建 runtime Docker 镜像。
 
@@ -579,22 +651,42 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
 - [ADR-0012：Agent 工具最小权限、不可信证据与预算治理](docs/adr/0012-agent-tool-security-budgets.md)
 - [ADR-0013：独立 claim/evidence/source/citation 与确定性 Reviewer](docs/adr/0013-evidence-review-entities.md)
 - [ADR-0014：不可变报告版本、人工审批与导出任务](docs/adr/0014-report-versions-exports.md)
+- [ADR-0015：Transactional outbox、Kafka 事件与消费幂等](docs/adr/0015-transactional-outbox-events.md)
+- [ADR-0016：Temporal 研究工作流与 DB 队列回退](docs/adr/0016-temporal-research-workflow.md)
 - [ADR 模板](docs/adr/0000-template.md)
 - [工程规范](docs/engineering-standards.md)
 - [Agent 模型网关契约](docs/agent-model-gateway.md)
 - [证据审查与报告交付操作说明](docs/report-delivery.md)
+- [事件与工作流运行说明](docs/events-and-workflows.md)
 
-## 本阶段限制 / 阶段 7 依赖
+## 本阶段限制 / 阶段 8 依赖
 
-- 已实现阶段 6 的确定性 Reviewer、有限补查、报告版本、人工审批和 Markdown/DOCX 导出；
-  尚未实现 Temporal/Kafka（阶段 7）、监测协作（阶段 8）和生产运营治理（阶段 9）。
+- 已实现阶段 7 的 outbox/Kafka 事件与 Temporal research lifecycle；尚未实现企业监测
+  与协作（阶段 8）和生产运营治理（阶段 9）。
+- Kafka、Redpanda、Temporal 服务未在本机实际启动；事件/工作流逻辑通过 recording
+  publisher、Temporal test environment 和 fake client 验证，生产需联调 TLS/SASL、
+  consumer group、topic 权限、workflow 命名空间和故障恢复。
+- Temporal workflow 只按 root run 生命周期推进；followup run 由 root workflow 的批次
+  activity 处理。若 workflow 因 bug/部署终止，需要运维按 workflow ID reset/restart；
+  starter 的 processed marker 不会自动重启已失败 workflow。
+- `agent` worker 的 Temporal 模式不运行 PostgreSQL research queue；review/export 仍有
+  安全循环。运行模式切换时必须排空旧 worker/迁移未完成 run，避免双模式并行。
+- 事件 payload 绑定审计动作，当前 `event_version=1`；新增 event schema 必须保持向后
+  兼容或显式升级 consumer。consumer dead letter 通过 DB 记录/API 查询，尚未提供自动
+  Kafka dead-letter 重放编排。
+- `EVENTS_OUTBOX_ENABLED=false` 仅停止 dispatcher，不停止审计写入 outbox；高吞吐部署
+  需要按 SLO 调整 batch/lease、Kafka partition 和清理策略。
+- Kafka/事件/工作流均未实现每个租户的独立 partition/fairness、配额或跨租户队列隔离；
+  tenant_id 通过 RLS、payload、partition key 和显式过滤保证，物理共享 broker/topic。
+- Redis 未被用于任务/事件权威状态；尚未实现 Redis 缓存/限流层。
 - Reviewer 的证据关系与冲突检测是确定性词法启发式，不包含语义 NLI/领域专家复核；
   它只作为强制 citation 校验之上的降级/标记机制，不能宣称自动事实核查已完成。
-- 报告版本/审查/导出仍是应用级 PostgreSQL 队列（lease + retry），不是 Temporal 持久
-  工作流；阶段 7 需补齐跨服务重启恢复、outbox、死信取消和更细的并发公平性。
+- 报告版本/审查/导出仍由 PostgreSQL lease 队列 + review/export 安全循环执行；Temporal
+  生命周期 workflow 已覆盖 research/review/export batch，但细粒度 report/export 状态
+  机仍在 DB，不是独立 Temporal workflow。跨租户公平性、死信取消和容量治理属于阶段 9。
 - run/finding/review/report 的读取 ACL 是 root run 的 workspace/project ACL；报告中的
   证据摘录会提供给有报告读权限的项目成员，不会对每个读者逐条重新鉴权原始来源。
-  引用级 ACL 仍需阶段 7/8/9 配合数据治理补齐。
+  引用级 ACL 仍需阶段 8/9 配合数据治理补齐。
 - 报告导出只支持 Markdown 与 DOCX；PDF、表格/图表、Word 模板、数字签名和外部 DMS
   集成未实现。DOCX 由 python-docx 生成，未在 Microsoft Word/Office 365 全版本做兼容性
   回归。
@@ -630,13 +722,14 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
   报告必须保留 gaps/conflicts，不能继续自动循环。
 - 持久检查点由应用在 LangGraph superstep 后写入租户表，不是 LangGraph 原生
   checkpointer；暂停/取消/权限变更在 superstep 边界生效，不保证中断进行中的单个
-  模型/工具调用；该 superstep 已产生的 finding 会保留供审计。阶段 7 由 Temporal 补齐
-  跨服务持久编排、outbox、取消与死信。
+  模型/工具调用；该 superstep 已产生的 finding 会保留供审计。阶段 7 已加入 Temporal
+  生命周期编排、outbox 和事件死信；workflow 失败/超时仍需运维 restart/reset。
 - failed/budget_exhausted 为终态；本阶段只支持 paused 的 resume，没有 failed 重跑、
   提高预算或所有权转移 API。局部 task 重试在 run 内完成；跨 run 的人工恢复/审批流
-  属于阶段 7/8。
-- agent worker 使用 PostgreSQL lease 队列，不是 Temporal/Kafka；多 worker 依赖 lease
-  与 heartbeat，极端时钟/网络分区场景需阶段 7/9 的运维验证。
+  属于阶段 8/9。
+- `TEMPORAL_ENABLED=false` 时 agent worker 仍使用 PostgreSQL lease 队列；true 时使用
+  Temporal Worker + outbox starter。两种模式不能同时对同一 run 做 research 队列执行，
+  切换时必须排空旧模式。极端时钟/网络分区需阶段 9 的故障演练。
 - 来源搜索目前是参数化 ILIKE 候选，未建立外部快照全文索引；大规模来源库需要专用
   检索/索引方案。报告生成的 claim 审查/词法冲突为 O(n²) 有界比较（默认 claim 上限
   100），大规模报告需要索引/模型辅助。
@@ -652,7 +745,8 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
   S3 适配器使用 boto3 标准接口，部署时需验证桶权限、TLS、加密与生命周期策略。
 - 文档索引/删除仍在请求内同步执行并受请求超时限制；采集使用 PostgreSQL 任务队列 +
   独立 worker，但尚未接入 Temporal/Kafka。并发索引/删除与 Qdrant 跨存储一致性采用
-  PG 回查、状态租约与可重试状态，仍需阶段 7 的 outbox/持久工作流完善。
+  PG 回查、状态租约与可重试状态；阶段 7 已提供 Temporal/outbox，但文档索引/同步删除
+  的跨存储事务仍需阶段 9 的容量/故障演练验证。
 - 报告导出对象写入与 RAG/采集相同的对象存储；本地 MinIO/S3 未做真实服务联调，生产
   需验证桶权限、TLS、加密、生命周期与导出对象保留策略。
 - 本地 Compose 数据库用户是超级用户，RLS 的实际强制需要部署时切换为非超级用户；
