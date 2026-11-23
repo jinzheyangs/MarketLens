@@ -1,6 +1,7 @@
 """ORM models. Importing this package registers metadata for Alembic."""
 
 from app.db.models.audit import AuditEvent
+from app.db.models.collaboration import ApprovalRequest, ProjectComment
 from app.db.models.collector import (
     CollectionTask,
     CollectorDomainLimit,
@@ -9,10 +10,20 @@ from app.db.models.collector import (
 )
 from app.db.models.document import Document, DocumentChunk, DocumentVersion
 from app.db.models.events import DomainEvent, EventConsumerFailure, ProcessedEvent
+from app.db.models.governance import TenantQuota
 from app.db.models.membership import (
     OrganizationMembership,
     ProjectMembership,
     WorkspaceMembership,
+)
+from app.db.models.monitoring import (
+    MonitorAlertRule,
+    MonitorChange,
+    MonitorRun,
+    MonitorSeenSource,
+    MonitorSubscription,
+    NotificationChannel,
+    NotificationDelivery,
 )
 from app.db.models.organization import Organization
 from app.db.models.project import Project
@@ -37,6 +48,7 @@ from app.db.models.user import User
 from app.db.models.workspace import Workspace
 
 __all__ = [
+    "ApprovalRequest",
     "AuditEvent",
     "CollectionTask",
     "CollectorDomainLimit",
@@ -45,10 +57,18 @@ __all__ = [
     "DocumentVersion",
     "DomainEvent",
     "EventConsumerFailure",
+    "MonitorAlertRule",
+    "MonitorChange",
+    "MonitorRun",
+    "MonitorSeenSource",
+    "MonitorSubscription",
+    "NotificationChannel",
+    "NotificationDelivery",
     "Organization",
     "OrganizationMembership",
     "ProcessedEvent",
     "Project",
+    "ProjectComment",
     "ProjectMembership",
     "Report",
     "ReportExportJob",
@@ -64,6 +84,7 @@ __all__ = [
     "ResearchToolCall",
     "SourceSnapshot",
     "Tenant",
+    "TenantQuota",
     "User",
     "WebSource",
     "Workspace",

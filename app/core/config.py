@@ -7,6 +7,7 @@ file for development). Secrets are never given code defaults and never appear in
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from functools import lru_cache
@@ -259,6 +260,38 @@ class Settings(BaseSettings):
     temporal_workflow_max_seconds: int = Field(default=86_400, ge=60, le=2_592_000)
     temporal_activity_timeout_seconds: int = Field(default=300, ge=10, le=3_600)
 
+    # Monitoring, notification, comments/approvals, and tenant quotas (stage 8).
+    monitoring_enabled: bool = False
+    monitoring_poll_interval_seconds: float = Field(default=5.0, ge=0.5, le=300)
+    monitoring_run_lease_seconds: int = Field(default=300, ge=30, le=3_600)
+    monitoring_run_max_attempts: int = Field(default=3, ge=1, le=10)
+    monitoring_max_concurrent_runs: int = Field(default=2, ge=1, le=20)
+    monitoring_max_sources_per_run: int = Field(default=20, ge=1, le=100)
+    monitoring_min_cadence_minutes: int = Field(default=5, ge=1, le=10_080)
+    monitoring_max_cadence_minutes: int = Field(default=10_080, ge=5, le=525_600)
+    monitoring_default_cadence_minutes: int = Field(default=60, ge=1, le=10_080)
+    monitoring_new_source_severity: Literal["low", "medium", "high", "critical"] = "medium"
+    monitoring_change_severity: Literal["low", "medium", "high", "critical"] = "high"
+    notification_encryption_key: SecretStr | None = Field(default=None, repr=False)
+    notification_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    notification_max_response_bytes: int = Field(default=65_536, ge=1_024, le=1_000_000)
+    notification_max_attempts: int = Field(default=5, ge=1, le=20)
+    notification_retry_base_seconds: float = Field(default=5.0, ge=0.1, le=300)
+    notification_retry_max_seconds: float = Field(default=3_600.0, ge=1, le=86_400)
+    notification_poll_interval_seconds: float = Field(default=5.0, ge=0.1, le=300)
+    notification_max_concurrent_deliveries: int = Field(default=4, ge=1, le=50)
+    notification_allowed_domains: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    notification_allow_http: bool = False
+    notification_signing_header: str = "X-MarketLens-Signature"
+    notification_max_payload_bytes: int = Field(default=65_536, ge=1_024, le=1_000_000)
+    quota_default_max_active_research_runs: int = Field(default=10, ge=1, le=10_000)
+    quota_default_max_pending_collection_tasks: int = Field(default=100, ge=1, le=100_000)
+    quota_default_max_monitor_subscriptions: int = Field(default=20, ge=1, le=10_000)
+    quota_default_max_concurrent_monitor_runs: int = Field(default=2, ge=1, le=100)
+    quota_default_max_notification_deliveries_per_day: int = Field(
+        default=1_000, ge=1, le=1_000_000
+    )
+
     # HTTP / API behavior.
     log_level: LogLevel = "INFO"
     log_format: Literal["json", "console"] = "json"
@@ -313,6 +346,7 @@ class Settings(BaseSettings):
         "web_search_api_key",
         "agent_api_key",
         "kafka_sasl_password",
+        "notification_encryption_key",
         mode="before",
     )
     @classmethod
@@ -390,6 +424,39 @@ class Settings(BaseSettings):
             if candidate not in normalized:
                 normalized.append(candidate)
         return normalized
+
+    @field_validator("notification_allowed_domains")
+    @classmethod
+    def _normalize_notification_domains(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            candidate = value.strip().lower().lstrip("*.").rstrip(".")
+            if not candidate or "/" in candidate or "\\" in candidate:
+                raise ValueError("notification domain entries must be host suffixes")
+            if candidate not in normalized:
+                normalized.append(candidate)
+        return normalized
+
+    @field_validator("notification_encryption_key")
+    @classmethod
+    def _validate_notification_key(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return None
+        raw = value.get_secret_value()
+        try:
+            decoded = base64.urlsafe_b64decode(raw.encode("ascii"))
+        except (ValueError, UnicodeEncodeError) as exc:
+            raise ValueError("NOTIFICATION_ENCRYPTION_KEY must be a Fernet key") from exc
+        if len(decoded) != 32:
+            raise ValueError("NOTIFICATION_ENCRYPTION_KEY must decode to 32 bytes")
+        return value
+
+    @field_validator("notification_signing_header")
+    @classmethod
+    def _validate_notification_header(cls, value: str) -> str:
+        if not _HEADER_NAME_PATTERN.fullmatch(value):
+            raise ValueError("NOTIFICATION_SIGNING_HEADER must be a valid header name")
+        return value
 
     @field_validator("event_topic", "event_dead_letter_topic")
     @classmethod
@@ -547,6 +614,7 @@ class Settings(BaseSettings):
         "collector_allowed_ports",
         "collector_allowed_content_types",
         "kafka_bootstrap_servers",
+        "notification_allowed_domains",
         mode="before",
     )
     @classmethod
@@ -824,6 +892,13 @@ class Settings(BaseSettings):
                 raise ValueError("TEMPORAL_HOST must be configured in production")
             if not self.temporal_tls:
                 raise ValueError("TEMPORAL_TLS must be true in production")
+            if self.monitoring_enabled:
+                if self.notification_encryption_key is None:
+                    raise ValueError(
+                        "MONITORING_ENABLED requires NOTIFICATION_ENCRYPTION_KEY in production"
+                    )
+                if self.notification_allow_http:
+                    raise ValueError("NOTIFICATION_ALLOW_HTTP must be false in production")
         return self
 
     @property

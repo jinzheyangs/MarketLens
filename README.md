@@ -3,13 +3,14 @@
 面向企业团队的市场情报与调研平台后端。最终架构与交付阶段见
 [`docs/项目蓝图.md`](docs/项目蓝图.md)。
 
-> **当前实现范围：阶段 7「持久工作流与事件体系」。**
+> **当前实现范围：阶段 8「企业监测、协作与租户配额」。**
 > 已完成：阶段 1 工程底座、阶段 2 身份/租户/RBAC/ABAC/审计、阶段 3 资料摄取/RAG、
 > 阶段 4 搜索/安全采集、阶段 5 LangGraph Supervisor/专业 Agent、阶段 6 证据审查/
-> 报告/审批/导出，以及阶段 7 的 transactional outbox、版本化 domain event、Kafka
-> producer/consumer、消费幂等/死信、Temporal research lifecycle workflow、活动重试/
-> 恢复和事件管理 API。
-> 尚未实现：企业监测与协作（阶段 8）、生产运营治理（阶段 9）等。
+> 报告/审批/导出、阶段 7 的 transactional outbox/版本化事件/Kafka/Temporal，以及
+> 阶段 8 的监测订阅与调度、内容变更检测、加密通知渠道、安全 webhook 投递、租户
+> 配额、项目评论和协作审批节点。详见
+> [`docs/monitoring-and-collaboration.md`](docs/monitoring-and-collaboration.md)。
+> 尚未实现：生产运营治理（阶段 9）等。
 
 ## 技术栈
 
@@ -43,6 +44,9 @@ app/
   reporting/           # Reviewer、claim/evidence/citation、报告生成、审批、导出/worker
   events/              # outbox dispatcher、Kafka publisher/consumer、死信与事件管理
   workflow/            # Temporal workflow、activities、starter、worker 模式
+  monitoring/          # 监测调度、变更检测、加密通知渠道、SSRF 安全 webhook
+  collaboration/       # 项目评论与协作审批节点
+  governance/          # 租户配额与 advisory lock 强制
   schemas/             # API schema
   services/            # 租户/成员/用户/审计/文档/RAG 编排
 alembic/               # 迁移
@@ -61,6 +65,8 @@ docker/postgres/init/  # 本地测试库初始化
 cp .env.example .env
 # 至少修改 POSTGRES_PASSWORD、MINIO_ROOT_PASSWORD，并保证 DATABASE_URL 中的密码一致。
 # 本地默认启用 RAG、MinIO（S3 兼容）+ hash embedding；生产必须改为真实 S3/HTTP embedding。
+# 如需监测/webhook，设置 MONITORING_ENABLED=true 并注入 Fernet 格式的
+# NOTIFICATION_ENCRYPTION_KEY（见 docs/monitoring-and-collaboration.md）。
 ```
 
 生产/预发必须由密钥管理服务或编排平台注入环境变量；`.env` 仅用于本地开发且已被
@@ -101,6 +107,9 @@ python -m app.agent.worker
 
 # 另开进程运行 outbox dispatcher / Kafka consumer（可选 consumer）
 python -m app.events.worker
+
+# 另开进程运行监测调度/变更检测/通知投递（MONITORING_ENABLED=true 时）
+python -m app.monitoring.worker
 ```
 
 `agent` worker 有两种模式：`TEMPORAL_ENABLED=false` 时使用 PostgreSQL 队列；true 时
@@ -108,8 +117,15 @@ python -m app.events.worker
 `events` worker 负责将 transactional outbox 派发到 Kafka（开发可 `log`），并按
 consumer group 做幂等消费和死信记录。
 
+`monitor` worker 使用 PostgreSQL lease 队列调度监测订阅：搜索 -> 复用采集器抓取 ->
+按快照内容哈希检测新来源/内容变化 -> 按告警规则创建通知投递。webhook 渠道 URL 和
+签名密钥使用 `NOTIFICATION_ENCRYPTION_KEY` 加密存储，发送时复用采集器的 SSRF/DNS
+固定策略，不跟随重定向。租户配额（研究运行、采集任务、监测订阅、并发监测运行、
+通知投递量）通过 PostgreSQL advisory transaction lock 强制执行；监测尚未配置搜索
+Provider 时运行会安全失败，而不是编造来源。
+
 或使用 Makefile（`make install-dev`、`make migrate`、`make run`）。
-Docker Compose 会同时启动 `collector`、`agent`、`events` worker，以及本地
+Docker Compose 会同时启动 `collector`、`agent`、`events`、`monitor` worker，以及本地
 Redpanda/Temporal；worker 都没有入站端口。`.env.example` 默认使用 log publisher 和
 DB queue，不要求 Kafka/Temporal 即可启动；设置 `EVENT_PUBLISHER=kafka`、
 `EVENT_CONSUMER_ENABLED=true`、`TEMPORAL_ENABLED=true` 后切换到真实事件/工作流模式。

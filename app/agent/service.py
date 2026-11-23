@@ -32,6 +32,7 @@ from app.db.models import (
     ResearchToolCall,
 )
 from app.db.tenant_scope import tenant_scoped_select
+from app.governance.quotas import QuotaResource, ensure_quota
 from app.services.audit import record_event
 from app.services.rag import RagServices
 
@@ -125,6 +126,12 @@ async def create_run(
                 raise ConflictError("The idempotency key is already used for another run.")
             return existing
 
+    await ensure_quota(
+        session,
+        tenant_id=principal.tenant_id,
+        resource=QuotaResource.RESEARCH_RUNS,
+        settings=settings,
+    )
     budget = budget_for_settings(settings)
     run = ResearchRun(
         id=uuid4(),

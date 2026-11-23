@@ -34,6 +34,7 @@ from app.core.telemetry import TelemetryHandle, instrument_database, setup_telem
 from app.db.rls import install_rls_context
 from app.db.session import create_engine, create_session_factory
 from app.db.tenant_guard import install_tenant_guard
+from app.monitoring.service import MonitoringServices, build_monitoring_services
 from app.reporting.service import ReviewServices, build_review_services
 from app.services.health import HealthService
 from app.services.rag import RagServices, build_rag_services
@@ -51,6 +52,7 @@ def _build_lifespan(
         collector_services: CollectorServices | None = None
         agent_services: AgentServices | None = None
         review_services: ReviewServices | None = None
+        monitoring_services: MonitoringServices | None = None
         try:
             app.state.engine = engine
             session_factory = create_session_factory(engine)
@@ -75,10 +77,17 @@ def _build_lifespan(
             if settings.report_enabled:
                 review_services = build_review_services(settings, session_factory)
                 await review_services.ensure_ready()
+            if settings.monitoring_enabled:
+                monitoring_services = build_monitoring_services(
+                    settings,
+                    session_factory,
+                    collector_services=collector_services,
+                )
             app.state.rag_services = rag_services
             app.state.collector_services = collector_services
             app.state.agent_services = agent_services
             app.state.review_services = review_services
+            app.state.monitoring_services = monitoring_services
             app.state.health_service = HealthService(
                 engine=engine,
                 settings=settings,
@@ -101,11 +110,14 @@ def _build_lifespan(
                         "collector": settings.collector_enabled,
                         "agent": settings.agent_enabled,
                         "report": settings.report_enabled,
+                        "monitoring": settings.monitoring_enabled,
                     }
                 },
             )
             yield
         finally:
+            if monitoring_services is not None:
+                await monitoring_services.aclose()
             if review_services is not None:
                 await review_services.aclose()
             if agent_services is not None:

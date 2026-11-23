@@ -52,6 +52,16 @@ _RLS_TABLES = {
     "domain_events",
     "event_consumer_failures",
     "processed_events",
+    "notification_channels",
+    "monitor_subscriptions",
+    "monitor_alert_rules",
+    "monitor_runs",
+    "monitor_seen_sources",
+    "monitor_changes",
+    "notification_deliveries",
+    "project_comments",
+    "approval_requests",
+    "tenant_quotas",
 }
 
 

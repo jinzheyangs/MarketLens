@@ -23,6 +23,7 @@ class ErrorCode(StrEnum):
     FORBIDDEN = "forbidden"
     CONFLICT = "conflict"
     RATE_LIMITED = "rate_limited"
+    QUOTA_EXCEEDED = "quota_exceeded"
     TENANT_CONTEXT_REQUIRED = "tenant_context_required"
     TENANT_ISOLATION_VIOLATION = "tenant_isolation_violation"
     SERVICE_UNAVAILABLE = "service_unavailable"
@@ -86,6 +87,16 @@ class ServiceUnavailableError(AppError):
             message=message,
             status_code=503,
             retryable=True,
+        )
+
+
+class QuotaExceededError(AppError):
+    def __init__(self, message: str = "The tenant quota has been exceeded.") -> None:
+        super().__init__(
+            code=ErrorCode.QUOTA_EXCEEDED,
+            message=message,
+            status_code=429,
+            retryable=False,
         )
 
 

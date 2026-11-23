@@ -487,3 +487,45 @@ def test_production_event_bus_and_temporal_hardening() -> None:
         make_production_settings(event_consumer_enabled=False)
     with pytest.raises(ValidationError):
         make_production_settings(kafka_security_protocol="PLAINTEXT")
+
+
+def test_monitoring_configuration_and_secret_validation() -> None:
+    from cryptography.fernet import Fernet
+
+    with pytest.raises(ValidationError):
+        make_settings(notification_encryption_key="not-a-fernet-key")
+
+    key = Fernet.generate_key().decode()
+    settings = make_settings(
+        monitoring_enabled=True,
+        notification_encryption_key=key,
+        notification_allowed_domains="*.Example.COM.,hooks.example.net",
+    )
+    assert settings.notification_encryption_key is not None
+    assert settings.notification_encryption_key.get_secret_value() == key
+    assert settings.notification_allowed_domains == [
+        "example.com",
+        "hooks.example.net",
+    ]
+    assert key not in repr(settings)
+
+
+def test_production_monitoring_hardening() -> None:
+    from cryptography.fernet import Fernet
+
+    with pytest.raises(ValidationError):
+        make_production_settings(monitoring_enabled=True)
+
+    key = Fernet.generate_key().decode()
+    with pytest.raises(ValidationError):
+        make_production_settings(
+            monitoring_enabled=True,
+            notification_encryption_key=key,
+            notification_allow_http=True,
+        )
+
+    settings = make_production_settings(
+        monitoring_enabled=True,
+        notification_encryption_key=key,
+    )
+    assert settings.monitoring_enabled is True

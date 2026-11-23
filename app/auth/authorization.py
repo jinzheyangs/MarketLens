@@ -54,6 +54,14 @@ _REQUIRED_ROLE: dict[Permission, ScopeRole] = {
     Permission.REPORT_READ: ScopeRole.VIEWER,
     Permission.REPORT_APPROVE: ScopeRole.ADMIN,
     Permission.REPORT_EXPORT: ScopeRole.EDITOR,
+    Permission.MONITOR_READ: ScopeRole.VIEWER,
+    Permission.MONITOR_MANAGE: ScopeRole.EDITOR,
+    Permission.NOTIFICATION_CHANNEL_MANAGE: ScopeRole.ADMIN,
+    Permission.COMMENT_CREATE: ScopeRole.VIEWER,
+    Permission.COMMENT_MANAGE: ScopeRole.ADMIN,
+    Permission.APPROVAL_READ: ScopeRole.VIEWER,
+    Permission.APPROVAL_CREATE: ScopeRole.EDITOR,
+    Permission.APPROVAL_DECIDE: ScopeRole.EDITOR,
 }
 
 
@@ -193,6 +201,7 @@ class AuthorizationService:
                 Permission.WORKSPACE_CONTENT_READ,
                 Permission.RESEARCH_RUN_READ,
                 Permission.REPORT_READ,
+                Permission.MONITOR_READ,
             }
             and self._can_read_ancestor(resource)
         ):

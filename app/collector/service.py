@@ -27,6 +27,7 @@ from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError, ServiceUnavailableError
 from app.db.models import CollectionTask, SourceSnapshot, WebSource
 from app.db.tenant_scope import tenant_scoped_select
+from app.governance.quotas import QuotaResource, ensure_quota
 from app.rag.errors import ObjectStorageError
 from app.rag.storage import ObjectStorage, build_object_storage
 from app.schemas.health import ComponentHealth
@@ -148,6 +149,13 @@ async def enqueue_tasks(
             seen.add(safe.url)
             safe_urls.append(safe)
 
+    await ensure_quota(
+        session,
+        tenant_id=principal.tenant_id,
+        resource=QuotaResource.COLLECTION_TASKS,
+        settings=settings,
+        increment=len(safe_urls),
+    )
     tasks: list[CollectionTask] = []
     now = datetime.now(UTC)
     for safe in safe_urls:

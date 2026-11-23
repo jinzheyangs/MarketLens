@@ -62,6 +62,7 @@ jobs:
           python -m app.collector.worker --help
           python -m app.agent.worker --help
           python -m app.events.worker --help
+          python -m app.monitoring.worker --help
 
       - name: Migration upgrade / downgrade / upgrade / drift check
         run: |
