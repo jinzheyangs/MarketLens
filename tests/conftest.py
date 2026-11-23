@@ -34,11 +34,28 @@ def make_settings(**overrides: Any) -> Settings:
         "debug": False,
         "database_url": DEFAULT_TEST_DATABASE_URL,
         "allowed_hosts": ["testserver", "localhost", "127.0.0.1"],
+        "oidc_enabled": False,
+        "oidc_issuer": "https://idp.test",
+        "oidc_audience": "marketlens-test",
+        "oidc_jwks_uri": "https://idp.test/jwks",
         "otel_enabled": False,
         "log_format": "json",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
+
+
+def make_production_settings(**overrides: Any) -> Settings:
+    values: dict[str, Any] = {
+        "environment": "production",
+        "allowed_hosts": ["api.example.com"],
+        "oidc_enabled": True,
+        "oidc_issuer": "https://idp.example.com",
+        "oidc_audience": "marketlens",
+        "oidc_jwks_uri": "https://idp.example.com/jwks",
+    }
+    values.update(overrides)
+    return make_settings(**values)
 
 
 @asynccontextmanager

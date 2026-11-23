@@ -1,0 +1,24 @@
+"""Versioned API router.
+
+Authentication and principal loading are applied at the router level so new
+business routes are protected by default. Authorization is enforced per action
+inside each endpoint.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, Security
+
+from app.api.v1 import audit, me, organizations, projects, users, workspaces
+from app.auth.dependencies import bearer_scheme, get_principal
+
+router = APIRouter(
+    dependencies=[Security(bearer_scheme), Depends(get_principal)],
+)
+
+router.include_router(me.router)
+router.include_router(users.router)
+router.include_router(organizations.router)
+router.include_router(workspaces.router)
+router.include_router(projects.router)
+router.include_router(audit.router)

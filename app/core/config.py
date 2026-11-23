@@ -22,6 +22,13 @@ Environment = Literal["development", "test", "staging", "production"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 _HEADER_NAME_PATTERN = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+_CLAIM_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+# Symmetric algorithms ("HS*") and "none" are intentionally not supported:
+# the resource server must not share a signing secret with the identity provider.
+_ALLOWED_OIDC_ALGORITHMS = frozenset(
+    {"RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256", "PS384", "PS512"}
+)
 
 
 def _validate_service_url(value: str | None, setting_name: str) -> str | None:
@@ -96,6 +103,19 @@ class Settings(BaseSettings):
     # Production must configure this explicitly (enforced below).
     allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
+    # OIDC resource-server boundary. Browser login is performed by the frontend
+    # or identity gateway; this backend verifies bearer JWTs against the issuer's
+    # JWKS. No client secret or password is stored.
+    oidc_enabled: bool = False
+    oidc_issuer: str | None = None
+    oidc_audience: str | None = None
+    oidc_jwks_uri: str | None = None
+    oidc_algorithms: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["RS256"])
+    oidc_tenant_claim: str = "tenant_id"
+    oidc_leeway_seconds: int = Field(default=60, ge=0, le=600)
+    oidc_jwks_cache_seconds: int = Field(default=300, ge=0, le=86_400)
+    oidc_http_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+
     # Observability.
     otel_enabled: bool = False
     otel_exporter_otlp_endpoint: str | None = None
@@ -120,7 +140,60 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("cors_allowed_origins", "allowed_hosts", mode="before")
+    @field_validator("oidc_issuer")
+    @classmethod
+    def _validate_issuer(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        candidate = value.strip()
+        if not candidate:
+            return None
+        parsed = urlparse(candidate)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("OIDC_ISSUER must be an absolute http(s) URL")
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError("OIDC_ISSUER must not contain credentials, query, or fragment")
+        # Trailing slashes are significant in issuer identifiers; preserve them.
+        return candidate
+
+    @field_validator("oidc_audience")
+    @classmethod
+    def _normalize_audience(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        candidate = value.strip()
+        return candidate or None
+
+    @field_validator("oidc_jwks_uri")
+    @classmethod
+    def _validate_jwks_uri(cls, value: str | None) -> str | None:
+        return _validate_service_url(value, "OIDC_JWKS_URI")
+
+    @field_validator("oidc_tenant_claim")
+    @classmethod
+    def _validate_tenant_claim(cls, value: str) -> str:
+        if not _CLAIM_NAME_PATTERN.fullmatch(value):
+            raise ValueError("OIDC_TENANT_CLAIM must be a valid claim name")
+        return value
+
+    @field_validator("oidc_algorithms")
+    @classmethod
+    def _validate_algorithms(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            algorithm = value.strip().upper()
+            if algorithm not in _ALLOWED_OIDC_ALGORITHMS:
+                raise ValueError(
+                    "OIDC_ALGORITHMS may only contain asymmetric algorithms "
+                    f"({', '.join(sorted(_ALLOWED_OIDC_ALGORITHMS))})"
+                )
+            if algorithm not in normalized:
+                normalized.append(algorithm)
+        if not normalized:
+            raise ValueError("OIDC_ALGORITHMS must not be empty")
+        return normalized
+
+    @field_validator("cors_allowed_origins", "allowed_hosts", "oidc_algorithms", mode="before")
     @classmethod
     def _parse_string_list(cls, value: Any) -> Any:
         """Accept a JSON array or a comma-separated environment variable."""
@@ -219,7 +292,22 @@ class Settings(BaseSettings):
         if self.otel_enabled and not self.otel_exporter_otlp_endpoint:
             raise ValueError("OTEL_ENABLED requires OTEL_EXPORTER_OTLP_ENDPOINT")
 
+        if self.oidc_enabled:
+            missing = [
+                name
+                for name, value in (
+                    ("OIDC_ISSUER", self.oidc_issuer),
+                    ("OIDC_AUDIENCE", self.oidc_audience),
+                    ("OIDC_JWKS_URI", self.oidc_jwks_uri),
+                )
+                if not value
+            ]
+            if missing:
+                raise ValueError("OIDC_ENABLED requires " + ", ".join(missing))
+
         if self.environment == "production":
+            if not self.oidc_enabled:
+                raise ValueError("OIDC_ENABLED must be true in production")
             if self.debug:
                 raise ValueError("DEBUG must be disabled in production")
             if self.db_echo:
@@ -232,6 +320,10 @@ class Settings(BaseSettings):
                 raise ValueError("ALLOWED_HOSTS must not contain '*' in production")
             if "*" in self.cors_allowed_origins:
                 raise ValueError("CORS_ALLOWED_ORIGINS must not contain '*' in production")
+            if self.oidc_issuer and urlparse(self.oidc_issuer).scheme != "https":
+                raise ValueError("OIDC_ISSUER must use https in production")
+            if self.oidc_jwks_uri and urlparse(self.oidc_jwks_uri).scheme != "https":
+                raise ValueError("OIDC_JWKS_URI must use https in production")
         return self
 
     @property

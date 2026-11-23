@@ -7,11 +7,18 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from cryptography.hazmat.primitives.asymmetric import rsa
 from dotenv import dotenv_values
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool
 
+from app.db.rls import install_rls_context
 from app.db.tenant_guard import install_tenant_guard
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -57,9 +64,30 @@ def migrated_database(alembic_config: Config, test_database_url: str) -> None:
 @pytest.fixture
 async def engine(migrated_database: None, test_database_url: str) -> AsyncIterator[AsyncEngine]:
     install_tenant_guard()
+    install_rls_context()
     # NullPool avoids sharing pool connections across per-test event loops.
     test_engine = create_async_engine(test_database_url, poolclass=NullPool)
     try:
         yield test_engine
     finally:
         await test_engine.dispose()
+
+
+@pytest.fixture
+def session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+
+
+@pytest.fixture(scope="session")
+def jwt_private_key() -> rsa.RSAPrivateKey:
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+@pytest.fixture(scope="session")
+def jwt_public_key(jwt_private_key: rsa.RSAPrivateKey) -> rsa.RSAPublicKey:
+    return jwt_private_key.public_key()
+
+
+@pytest.fixture(scope="session")
+def jwt_bad_private_key() -> rsa.RSAPrivateKey:
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)

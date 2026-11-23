@@ -97,6 +97,9 @@ class AccessLogMiddleware:
                 "status": status_code,
                 "duration_ms": duration_ms,
             }
+            state = scope.get("state")
+            if isinstance(state, dict) and state.get("tenant_id") is not None:
+                context["tenant_id"] = state["tenant_id"]
             if client_host is not None:
                 context["client"] = client_host
             if path.startswith("/health/"):

@@ -50,6 +50,49 @@ class AppError(Exception):
         self.headers = dict(headers) if headers else None
 
 
+class AuthenticationError(AppError):
+    def __init__(
+        self,
+        message: str = "Authentication is required.",
+        *,
+        invalid_token: bool = False,
+    ) -> None:
+        challenge = 'Bearer error="invalid_token"' if invalid_token else "Bearer"
+        super().__init__(
+            code=ErrorCode.UNAUTHORIZED,
+            message=message,
+            status_code=401,
+            headers={"WWW-Authenticate": challenge},
+        )
+
+
+class ForbiddenError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            code=ErrorCode.FORBIDDEN,
+            message="The operation is not permitted.",
+            status_code=403,
+        )
+
+
+class NotFoundError(AppError):
+    def __init__(self, message: str = "The requested resource was not found.") -> None:
+        super().__init__(
+            code=ErrorCode.NOT_FOUND,
+            message=message,
+            status_code=404,
+        )
+
+
+class ConflictError(AppError):
+    def __init__(self, message: str = "The request conflicts with the current state.") -> None:
+        super().__init__(
+            code=ErrorCode.CONFLICT,
+            message=message,
+            status_code=409,
+        )
+
+
 class TenantContextError(AppError):
     def __init__(self) -> None:
         super().__init__(

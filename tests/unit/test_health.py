@@ -5,7 +5,7 @@ from httpx import AsyncClient
 
 from app.factory import create_app
 from app.schemas.health import ComponentHealth, LivenessResponse, ReadinessResponse
-from tests.conftest import make_settings, open_client
+from tests.conftest import make_production_settings, open_client
 
 
 class FakeHealthService:
@@ -53,7 +53,7 @@ async def test_readiness_unavailable(app: FastAPI, client: AsyncClient) -> None:
 
 
 async def test_production_disables_docs_and_enables_hsts() -> None:
-    application = create_app(make_settings(environment="production", allowed_hosts=["testserver"]))
+    application = create_app(make_production_settings(allowed_hosts=["testserver"]))
     async with open_client(application) as client:
         docs = await client.get("/docs")
         schema = await client.get("/openapi.json")

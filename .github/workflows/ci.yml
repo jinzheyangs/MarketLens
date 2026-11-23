@@ -56,6 +56,9 @@ jobs:
       - name: Type check
         run: mypy app
 
+      - name: CLI smoke
+        run: python -m app.cli --help
+
       - name: Migration upgrade / downgrade / upgrade / drift check
         run: |
           alembic upgrade head

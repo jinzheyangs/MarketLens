@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Uuid, func
+from sqlalchemy import DateTime, ForeignKey, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 
@@ -40,6 +40,7 @@ class TimestampMixin:
 class TenantScopedMixin:
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
         comment="Owning tenant. Every read/write must be scoped to it.",
