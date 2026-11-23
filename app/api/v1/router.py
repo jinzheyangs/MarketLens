@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Security
 
 from app.api.v1 import (
     audit,
+    collector,
     documents,
     me,
     organizations,
@@ -30,4 +31,5 @@ router.include_router(organizations.router)
 router.include_router(workspaces.router)
 router.include_router(projects.router)
 router.include_router(documents.router)
+router.include_router(collector.router)
 router.include_router(audit.router)

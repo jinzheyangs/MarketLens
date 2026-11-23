@@ -182,6 +182,17 @@ def test_descendant_membership_can_read_ancestors_but_not_write() -> None:
     denied = service.evaluate(Permission.WORKSPACE_UPDATE, _workspace(org_id, ws_id))
     assert not denied.allowed
     assert denied.reason == "no_membership"
+    content_denied = service.evaluate(Permission.WORKSPACE_CONTENT_READ, _workspace(org_id, ws_id))
+    assert not content_denied.allowed
+    assert content_denied.reason == "no_membership"
+
+    workspace_viewer = AuthorizationService(
+        principal=_principal(workspace_roles={ws_id: ScopeRole.VIEWER}),
+        denial_audit=RecordingAudit(),
+    )
+    assert workspace_viewer.evaluate(
+        Permission.WORKSPACE_CONTENT_READ, _workspace(org_id, ws_id)
+    ).allowed
 
 
 def test_no_membership_is_denied() -> None:

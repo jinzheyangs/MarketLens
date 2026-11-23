@@ -17,6 +17,7 @@ from app.api.health import router as health_router
 from app.api.v1.router import router as api_v1_router
 from app.auth.middleware import AuthenticationMiddleware
 from app.auth.oidc import build_token_verifier
+from app.collector.service import CollectorServices, build_collector_services
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import (
@@ -45,6 +46,7 @@ def _build_lifespan(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = create_engine(settings)
         rag_services: RagServices | None = None
+        collector_services: CollectorServices | None = None
         try:
             app.state.engine = engine
             session_factory = create_session_factory(engine)
@@ -53,11 +55,19 @@ def _build_lifespan(
             if settings.rag_enabled:
                 rag_services = build_rag_services(settings, session_factory)
                 await rag_services.ensure_ready()
+            if settings.collector_enabled:
+                collector_services = build_collector_services(
+                    settings,
+                    session_factory,
+                )
+                await collector_services.ensure_ready()
             app.state.rag_services = rag_services
+            app.state.collector_services = collector_services
             app.state.health_service = HealthService(
                 engine=engine,
                 settings=settings,
                 rag_services=rag_services,
+                collector_services=collector_services,
             )
 
             telemetry_handle: TelemetryHandle | None = getattr(app.state, "telemetry", None)
@@ -72,11 +82,14 @@ def _build_lifespan(
                         "database": settings.safe_database_url,
                         "tracing": settings.otel_enabled,
                         "rag": settings.rag_enabled,
+                        "collector": settings.collector_enabled,
                     }
                 },
             )
             yield
         finally:
+            if collector_services is not None:
+                await collector_services.aclose()
             if rag_services is not None:
                 await rag_services.aclose()
             telemetry_handle = getattr(app.state, "telemetry", None)

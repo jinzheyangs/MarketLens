@@ -37,6 +37,7 @@ _REQUIRED_ROLE: dict[Permission, ScopeRole] = {
     Permission.ORGANIZATION_UPDATE: ScopeRole.ADMIN,
     Permission.ORGANIZATION_MANAGE_MEMBERS: ScopeRole.ADMIN,
     Permission.WORKSPACE_READ: ScopeRole.VIEWER,
+    Permission.WORKSPACE_CONTENT_READ: ScopeRole.VIEWER,
     Permission.WORKSPACE_CREATE: ScopeRole.EDITOR,
     Permission.WORKSPACE_UPDATE: ScopeRole.EDITOR,
     Permission.WORKSPACE_MANAGE_STATUS: ScopeRole.ADMIN,
@@ -96,7 +97,7 @@ def _highest(roles: list[ScopeRole]) -> ScopeRole | None:
 
 
 def _is_read(permission: Permission) -> bool:
-    return permission.value.endswith(":read")
+    return permission.value.endswith(":read") or permission.value.endswith("_read")
 
 
 class AuthorizationService:
@@ -176,8 +177,13 @@ class AuthorizationService:
             return effective
 
         # A descendant membership permits navigation/read of its ancestors but
-        # does not grant any write capability there.
-        if _is_read(permission) and self._can_read_ancestor(resource):
+        # does not grant any write capability there. Workspace-wide content
+        # (external source library) deliberately requires a real workspace role.
+        if (
+            _is_read(permission)
+            and permission != Permission.WORKSPACE_CONTENT_READ
+            and self._can_read_ancestor(resource)
+        ):
             return ScopeRole.VIEWER
         return None
 

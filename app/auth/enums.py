@@ -65,6 +65,9 @@ class ResourceType(StrEnum):
     MEMBERSHIP = "membership"
     DOCUMENT = "document"
     DOCUMENT_VERSION = "document_version"
+    COLLECTION_TASK = "collection_task"
+    SOURCE = "source"
+    SOURCE_SNAPSHOT = "source_snapshot"
 
 
 class Permission(StrEnum):
@@ -75,6 +78,7 @@ class Permission(StrEnum):
 
     WORKSPACE_CREATE = "workspace:create"
     WORKSPACE_READ = "workspace:read"
+    WORKSPACE_CONTENT_READ = "workspace:content_read"
     WORKSPACE_UPDATE = "workspace:update"
     WORKSPACE_MANAGE_STATUS = "workspace:manage_status"
     WORKSPACE_MANAGE_MEMBERS = "workspace:manage_members"
@@ -107,4 +111,12 @@ class AuditAction(StrEnum):
     DOCUMENT_INDEX_FAILED = "document.index_failed"
     DOCUMENT_DELETED = "document.deleted"
     DOCUMENT_DELETE_FAILED = "document.delete_failed"
+    COLLECTION_TASK_QUEUED = "collection.task_queued"
+    COLLECTION_TASK_SUCCEEDED = "collection.task_succeeded"
+    COLLECTION_TASK_FAILED = "collection.task_failed"
+    COLLECTION_TASK_RETRIED = "collection.task_retried"
+    SOURCE_CREATED = "source.created"
+    SOURCE_UPDATED = "source.updated"
+    SOURCE_DELETED = "source.deleted"
+    SOURCE_DELETE_FAILED = "source.delete_failed"
     AUTHORIZATION_DENIED = "authorization.denied"

@@ -1,6 +1,12 @@
 """ORM models. Importing this package registers metadata for Alembic."""
 
 from app.db.models.audit import AuditEvent
+from app.db.models.collector import (
+    CollectionTask,
+    CollectorDomainLimit,
+    SourceSnapshot,
+    WebSource,
+)
 from app.db.models.document import Document, DocumentChunk, DocumentVersion
 from app.db.models.membership import (
     OrganizationMembership,
@@ -15,6 +21,8 @@ from app.db.models.workspace import Workspace
 
 __all__ = [
     "AuditEvent",
+    "CollectionTask",
+    "CollectorDomainLimit",
     "Document",
     "DocumentChunk",
     "DocumentVersion",
@@ -22,8 +30,10 @@ __all__ = [
     "OrganizationMembership",
     "Project",
     "ProjectMembership",
+    "SourceSnapshot",
     "Tenant",
     "User",
+    "WebSource",
     "Workspace",
     "WorkspaceMembership",
 ]

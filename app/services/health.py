@@ -19,6 +19,7 @@ from app.core.logging import get_logger
 from app.schemas.health import ComponentHealth, LivenessResponse, ReadinessResponse
 
 if TYPE_CHECKING:
+    from app.collector.service import CollectorServices
     from app.services.rag import RagServices
 
 logger = get_logger(__name__)
@@ -31,10 +32,12 @@ class HealthService:
         engine: AsyncEngine,
         settings: Settings,
         rag_services: RagServices | None = None,
+        collector_services: CollectorServices | None = None,
     ) -> None:
         self._engine = engine
         self._settings = settings
         self._rag_services = rag_services
+        self._collector_services = collector_services
 
     async def liveness(self) -> LivenessResponse:
         return LivenessResponse(version=self._settings.version)
@@ -44,10 +47,13 @@ class HealthService:
 
         if self._rag_services is not None:
             components.update(await self._rag_services.health())
-        elif self._settings.qdrant_url:
-            components["vector_store"] = await self._check_qdrant()
         else:
-            components["vector_store"] = ComponentHealth(status="disabled")
+            if self._collector_services is not None:
+                components.update(await self._collector_services.health())
+            if self._settings.qdrant_url:
+                components["vector_store"] = await self._check_qdrant()
+            else:
+                components["vector_store"] = ComponentHealth(status="disabled")
 
         healthy = all(component.status in {"ok", "disabled"} for component in components.values())
         return ReadinessResponse(

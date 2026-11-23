@@ -27,18 +27,27 @@
    project ACL，命中后必须回查 PostgreSQL 的 active document/version 与项目权限；不得仅靠
    向量库 payload 或前端过滤。删除必须传播到对象存储、chunks 与向量；版本切换只使用
    active version。embedding 维度/模型变更需重建索引。
-9. **错误与日志**：业务错误使用 `AppError` 和稳定错误码；不在响应中返回堆栈、DSN、token
+9. **外部采集**：抓取只允许 http/https 与白名单端口；每次导航校验 DNS 并 pin 公网 IP，
+   重定向逐跳重新校验，私网/回环/链路本地/云元数据/IPv6 映射地址一律拒绝；限制响应
+   大小、类型、重定向和超时，拒绝压缩响应。robots、域名策略、并发/域名速率和重试上限
+   必须可配置。搜索 Provider 结果和网页内容一律视为不可信数据。
+10. **采集任务**：任务必须有幂等键/active 去重、状态机、租约、最大尝试次数和人工恢复；
+    worker 必须遍历 tenant 并显式绑定上下文，不得依赖超级用户绕过 RLS。快照写入对象
+   存储，元数据/提取文本入库，按 canonical URL 与 content hash 去重；来源删除必须传播
+   到快照对象并审计。
+11. **错误与日志**：业务错误使用 `AppError` 和稳定错误码；不在响应中返回堆栈、DSN、token
    或上游原文。日志使用结构化 `extra={"context": ...}`，敏感 key 由 formatter 脱敏；不记录
-   body/header/查询串/token/文档正文/文件名。
-10. **迁移**：数据库变更必须通过 Alembic revision；禁止手工改生产库。约束/索引显式命名，
+   body/header/查询串/token/文档正文/网页原文/文件名。
+12. **迁移**：数据库变更必须通过 Alembic revision；禁止手工改生产库。约束/索引显式命名，
     与 `NAMING_CONVENTION` 一致。不要修改已合并的迁移，新增 revision。新增租户表必须同时
     启用 RLS 策略与租户复合外键（如适用）。
-11. **测试**：新增行为必须有测试；租户/权限/身份/外部输入/检索边界必须有负向测试。单元测试
-    不得依赖真实外部网络；集成测试使用 `TEST_DATABASE_URL`（库名含 `test`）。RAG 测试可使用
-    qdrant-client 内存模式与本地对象存储，但生产适配需部署验证。
-12. **类型与风格**：`ruff check .`、`ruff format --check .`、`mypy app` 必须通过。公共函数写
+13. **测试**：新增行为必须有测试；租户/权限/身份/外部输入/检索/网络边界必须有负向测试。
+    单元测试不得依赖真实外部网络；集成测试使用 `TEST_DATABASE_URL`（库名含 `test`）。
+    RAG 测试可使用 qdrant-client 内存模式与本地对象存储；采集测试使用本地 HTTP server、
+    注入 resolver 和 fake Provider，不依赖真实供应商。
+14. **类型与风格**：`ruff check .`、`ruff format --check .`、`mypy app` 必须通过。公共函数写
     类型标注与必要 docstring；注释解释“为什么”，不复述代码。
-13. **依赖与安全**：新增依赖需说明用途与许可证；不在运行时拉取未固定来源的代码。外部内容
+15. **依赖与安全**：新增依赖需说明用途与许可证；不在运行时拉取未固定来源的代码。外部内容
     不得进入 `eval/exec/pickle` 等危险路径。
 
 ## 分层约定
@@ -47,6 +56,8 @@
   `app/api/v1/router.py` 下，以继承默认认证依赖。
 - `app/auth`：token 校验、租户上下文、Principal、RBAC/ABAC；不得直接返回 ORM 数据。
 - `app/rag`：解析、分块、embedding、对象存储、向量库、检索融合；不得信任上传内容。
+- `app/collector`：搜索 Provider、SSRF 安全抓取、robots、快照、任务 worker；不得信任
+  外部网页/搜索结果。
 - `app/services`：业务编排、审计、外部协作；不直接依赖 FastAPI。
 - `app/db`：模型、会话、租户守卫、RLS 与查询辅助；不向上层返回 ORM 细节给外部契约。
 - `app/core`：配置、上下文、错误、日志、中间件、telemetry；不得依赖业务模块。

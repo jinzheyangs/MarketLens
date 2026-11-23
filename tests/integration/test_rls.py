@@ -25,6 +25,10 @@ _RLS_TABLES = {
     "documents",
     "document_versions",
     "document_chunks",
+    "collector_domain_limits",
+    "web_sources",
+    "collection_tasks",
+    "source_snapshots",
 }
 
 

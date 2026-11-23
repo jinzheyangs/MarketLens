@@ -1,6 +1,6 @@
 PYTHON ?= python
 
-.PHONY: install install-dev run lint format typecheck test test-unit test-integration migrate revision up down logs
+.PHONY: install install-dev run worker lint format typecheck test test-unit test-integration migrate revision up down logs
 
 install:
 	$(PYTHON) -m pip install .
@@ -10,6 +10,9 @@ install-dev:
 
 run:
 	$(PYTHON) -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000 --no-access-log
+
+worker:
+	$(PYTHON) -m app.collector.worker
 
 lint:
 	$(PYTHON) -m ruff check .

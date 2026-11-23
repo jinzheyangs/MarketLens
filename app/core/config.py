@@ -129,6 +129,41 @@ class Settings(BaseSettings):
     search_default_limit: int = Field(default=10, ge=1, le=50)
     search_max_limit: int = Field(default=50, ge=1, le=200)
 
+    # External search and isolated web collection.
+    collector_enabled: bool = False
+    collector_user_agent: str = "MarketLensCollector/0.1 (+https://example.invalid/collector)"
+    collector_allowed_domains: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    collector_blocked_domains: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    collector_allow_private_networks: bool = False
+    collector_request_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    collector_max_response_bytes: int = Field(default=2_000_000, ge=1024, le=20_000_000)
+    collector_max_extracted_chars: int = Field(default=200_000, ge=1_000, le=2_000_000)
+    collector_max_redirects: int = Field(default=3, ge=0, le=10)
+    collector_allowed_ports: Annotated[list[int], NoDecode] = Field(
+        default_factory=lambda: [80, 443]
+    )
+    collector_allowed_content_types: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["text/html", "text/plain", "application/xhtml+xml"]
+    )
+    collector_respect_robots: bool = True
+    collector_robots_cache_seconds: int = Field(default=3600, ge=0, le=86_400)
+    collector_robots_max_bytes: int = Field(default=512_000, ge=1024, le=5_000_000)
+    collector_max_concurrent_tasks: int = Field(default=4, ge=1, le=32)
+    collector_poll_interval_seconds: float = Field(default=2.0, ge=0.1, le=60)
+    collector_task_lease_seconds: int = Field(default=120, ge=30, le=3_600)
+    collector_max_attempts: int = Field(default=3, ge=1, le=10)
+    collector_retry_base_seconds: float = Field(default=5.0, ge=0.1, le=300)
+    collector_retry_max_seconds: float = Field(default=300.0, ge=1, le=3_600)
+    collector_domain_min_interval_seconds: float = Field(default=1.0, ge=0, le=60)
+    collector_max_tasks_per_request: int = Field(default=20, ge=1, le=100)
+
+    web_search_provider: Literal["none", "http"] = "none"
+    web_search_api_url: str | None = None
+    web_search_api_key: SecretStr | None = Field(default=None, repr=False)
+    web_search_api_key_header: str = "X-API-Key"
+    web_search_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    web_search_max_results: int = Field(default=10, ge=1, le=50)
+
     # HTTP / API behavior.
     log_level: LogLevel = "INFO"
     log_format: Literal["json", "console"] = "json"
@@ -180,6 +215,7 @@ class Settings(BaseSettings):
         "embedding_api_key",
         "s3_access_key",
         "s3_secret_key",
+        "web_search_api_key",
         mode="before",
     )
     @classmethod
@@ -229,6 +265,70 @@ class Settings(BaseSettings):
         if not candidate:
             raise ValueError("must not be empty")
         return candidate
+
+    @field_validator("web_search_api_url")
+    @classmethod
+    def _validate_web_search_url(cls, value: str | None) -> str | None:
+        return _validate_service_url(value, "WEB_SEARCH_API_URL")
+
+    @field_validator("web_search_api_key_header")
+    @classmethod
+    def _validate_api_key_header(cls, value: str) -> str:
+        if not _HEADER_NAME_PATTERN.fullmatch(value):
+            raise ValueError("WEB_SEARCH_API_KEY_HEADER must be a valid header name")
+        return value
+
+    @field_validator("collector_user_agent")
+    @classmethod
+    def _validate_user_agent(cls, value: str) -> str:
+        candidate = value.strip()
+        if not candidate or len(candidate) > 256 or "\r" in candidate or "\n" in candidate:
+            raise ValueError("COLLECTOR_USER_AGENT must be a safe, non-empty value")
+        return candidate
+
+    @field_validator("collector_allowed_domains", "collector_blocked_domains")
+    @classmethod
+    def _normalize_domain_policy(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            candidate = value.strip().lower()
+            if candidate.startswith("*."):
+                candidate = candidate[2:]
+            candidate = candidate.rstrip(".")
+            if not candidate or "/" in candidate or "\\" in candidate:
+                raise ValueError("domain policy entries must be host suffixes")
+            if candidate not in normalized:
+                normalized.append(candidate)
+        return normalized
+
+    @field_validator("collector_allowed_ports")
+    @classmethod
+    def _validate_allowed_ports(cls, values: list[int]) -> list[int]:
+        if not values:
+            raise ValueError("COLLECTOR_ALLOWED_PORTS must not be empty")
+        normalized: list[int] = []
+        for value in values:
+            port = int(value)
+            if not 1 <= port <= 65_535:
+                raise ValueError("COLLECTOR_ALLOWED_PORTS contains an invalid port")
+            if port not in normalized:
+                normalized.append(port)
+        return sorted(normalized)
+
+    @field_validator("collector_allowed_content_types")
+    @classmethod
+    def _validate_content_types(cls, values: list[str]) -> list[str]:
+        allowed = {"text/html", "text/plain", "application/xhtml+xml"}
+        normalized: list[str] = []
+        for value in values:
+            candidate = value.split(";", 1)[0].strip().lower()
+            if not candidate or candidate not in allowed:
+                raise ValueError("COLLECTOR_ALLOWED_CONTENT_TYPES contains an unsupported type")
+            if candidate not in normalized:
+                normalized.append(candidate)
+        if not normalized:
+            raise ValueError("COLLECTOR_ALLOWED_CONTENT_TYPES must not be empty")
+        return normalized
 
     @field_validator("oidc_issuer")
     @classmethod
@@ -283,7 +383,16 @@ class Settings(BaseSettings):
             raise ValueError("OIDC_ALGORITHMS must not be empty")
         return normalized
 
-    @field_validator("cors_allowed_origins", "allowed_hosts", "oidc_algorithms", mode="before")
+    @field_validator(
+        "cors_allowed_origins",
+        "allowed_hosts",
+        "oidc_algorithms",
+        "collector_allowed_domains",
+        "collector_blocked_domains",
+        "collector_allowed_ports",
+        "collector_allowed_content_types",
+        mode="before",
+    )
     @classmethod
     def _parse_string_list(cls, value: Any) -> Any:
         """Accept a JSON array or a comma-separated environment variable."""
@@ -416,6 +525,20 @@ class Settings(BaseSettings):
             if self.object_storage_backend == "s3" and not self.s3_bucket:
                 raise ValueError("OBJECT_STORAGE_BACKEND=s3 requires S3_BUCKET")
 
+        if self.collector_allow_private_networks and self.environment not in {
+            "development",
+            "test",
+        }:
+            raise ValueError("COLLECTOR_ALLOW_PRIVATE_NETWORKS is only allowed in development/test")
+        if self.collector_retry_base_seconds > self.collector_retry_max_seconds:
+            raise ValueError(
+                "COLLECTOR_RETRY_BASE_SECONDS must not exceed COLLECTOR_RETRY_MAX_SECONDS"
+            )
+        if self.web_search_provider == "http" and not self.web_search_api_url:
+            raise ValueError("WEB_SEARCH_PROVIDER=http requires WEB_SEARCH_API_URL")
+        if self.collector_enabled and self.object_storage_backend == "s3" and not self.s3_bucket:
+            raise ValueError("COLLECTOR_ENABLED with S3 requires S3_BUCKET")
+
         if self.environment == "production":
             if not self.oidc_enabled:
                 raise ValueError("OIDC_ENABLED must be true in production")
@@ -450,6 +573,29 @@ class Settings(BaseSettings):
                     raise ValueError("EMBEDDING_API_URL must use https in production")
                 if self.s3_endpoint_url and urlparse(self.s3_endpoint_url).scheme != "https":
                     raise ValueError("S3_ENDPOINT_URL must use https in production")
+            if self.collector_allow_private_networks:
+                raise ValueError("COLLECTOR_ALLOW_PRIVATE_NETWORKS must be false in production")
+            if self.collector_enabled:
+                if self.object_storage_backend != "s3":
+                    raise ValueError(
+                        "COLLECTOR_ENABLED requires OBJECT_STORAGE_BACKEND=s3 in production"
+                    )
+                if not self.s3_bucket:
+                    raise ValueError("COLLECTOR_ENABLED requires S3_BUCKET in production")
+                if not self.s3_use_ssl:
+                    raise ValueError("S3_USE_SSL must be true in production")
+                if self.s3_endpoint_url and urlparse(self.s3_endpoint_url).scheme != "https":
+                    raise ValueError("S3_ENDPOINT_URL must use https in production")
+                if any(port not in {80, 443} for port in self.collector_allowed_ports):
+                    raise ValueError(
+                        "COLLECTOR_ALLOWED_PORTS must be limited to 80/443 in production"
+                    )
+            if (
+                self.web_search_provider == "http"
+                and self.web_search_api_url
+                and urlparse(self.web_search_api_url).scheme != "https"
+            ):
+                raise ValueError("WEB_SEARCH_API_URL must use https in production")
         return self
 
     @property

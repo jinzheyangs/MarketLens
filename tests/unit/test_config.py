@@ -267,6 +267,75 @@ def test_production_rag_requires_hardened_backends() -> None:
         )
 
 
+def test_collector_configuration_parsing_and_validation() -> None:
+    settings = make_settings(
+        collector_allowed_ports="80,443,8080",
+        collector_allowed_content_types="text/html, text/plain",
+        collector_allowed_domains="example.com, *.example.org",
+        collector_blocked_domains="blocked.example",
+    )
+    assert settings.collector_allowed_ports == [80, 443, 8080]
+    assert settings.collector_allowed_content_types == ["text/html", "text/plain"]
+    assert settings.collector_allowed_domains == ["example.com", "example.org"]
+    assert settings.collector_blocked_domains == ["blocked.example"]
+
+    with pytest.raises(ValidationError):
+        make_settings(collector_allowed_content_types=["application/json"])
+    with pytest.raises(ValidationError):
+        make_settings(collector_allowed_ports=[0])
+    with pytest.raises(ValidationError):
+        make_settings(collector_user_agent="bad\nagent")
+    with pytest.raises(ValidationError):
+        make_settings(
+            collector_retry_base_seconds=300,
+            collector_retry_max_seconds=10,
+        )
+    with pytest.raises(ValidationError):
+        make_settings(web_search_provider="http")
+    with pytest.raises(ValidationError):
+        make_settings(
+            collector_enabled=True,
+            object_storage_backend="s3",
+            s3_bucket=None,
+        )
+
+
+def test_production_collector_hardening() -> None:
+    valid = make_production_settings(
+        rag_enabled=False,
+        collector_enabled=True,
+        object_storage_backend="s3",
+        s3_bucket="marketlens-sources",
+    )
+    assert valid.collector_enabled is True
+
+    with pytest.raises(ValidationError):
+        make_production_settings(
+            rag_enabled=False,
+            collector_enabled=True,
+            object_storage_backend="local",
+        )
+    with pytest.raises(ValidationError):
+        make_production_settings(
+            rag_enabled=False,
+            collector_enabled=True,
+            object_storage_backend="s3",
+            s3_bucket="marketlens-sources",
+            collector_allowed_ports=[8080],
+        )
+    with pytest.raises(ValidationError):
+        make_production_settings(
+            rag_enabled=False,
+            collector_allow_private_networks=True,
+        )
+    with pytest.raises(ValidationError):
+        make_production_settings(
+            rag_enabled=False,
+            web_search_provider="http",
+            web_search_api_url="http://search.example.com/query",
+        )
+
+
 def test_s3_configuration_consistency() -> None:
     with pytest.raises(ValidationError):
         make_settings(s3_access_key="key")

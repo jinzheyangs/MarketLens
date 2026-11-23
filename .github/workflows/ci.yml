@@ -57,7 +57,9 @@ jobs:
         run: mypy app
 
       - name: CLI smoke
-        run: python -m app.cli --help
+        run: |
+          python -m app.cli --help
+          python -m app.collector.worker --help
 
       - name: Migration upgrade / downgrade / upgrade / drift check
         run: |
