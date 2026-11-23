@@ -3,12 +3,13 @@
 面向企业团队的市场情报与调研平台后端。最终架构与交付阶段见
 [`docs/项目蓝图.md`](docs/项目蓝图.md)。
 
-> **当前实现范围：阶段 4「来源搜索与采集安全」。**
-> 已完成：阶段 1 工程底座、阶段 2 身份/租户/RBAC/ABAC/审计、阶段 3 资料摄取/RAG，
-> 以及阶段 4 的可配置搜索 Provider、隔离采集 worker、SSRF/DNS 重绑定防护、域名策略、
-> robots、并发/域名速率限制、快照/来源去重、失败重试与来源 RLS。
-> 尚未实现：LangGraph 多 Agent（阶段 5）、证据审查/报告（阶段 6）、
-> Temporal/Kafka（阶段 7）、监测与协作（阶段 8）等。
+> **当前实现范围：阶段 5「企业级多 Agent 调研」。**
+> 已完成：阶段 1 工程底座、阶段 2 身份/租户/RBAC/ABAC/审计、阶段 3 资料摄取/RAG、
+> 阶段 4 搜索/安全采集，以及阶段 5 的 LangGraph Supervisor + 行业/竞品/用户专业
+> Agent、并行研究、只读工具注册、结构化 finding、预算治理、持久检查点、
+> 人工暂停/恢复和运行回放 API。
+> 尚未实现：证据审查/复核循环/报告导出（阶段 6）、Temporal/Kafka（阶段 7）、
+> 监测与协作（阶段 8）等。
 
 ## 技术栈
 
@@ -18,6 +19,7 @@
 - S3 兼容对象存储（本地 MinIO / 生产 S3）、boto3
 - Qdrant（qdrant-client）、可替换 embedding provider、pypdf
 - 可配置外部搜索 Provider、隔离采集 worker（SSRF/DNS pinning/robots）
+- LangGraph 1.x（MIT；Supervisor + 专业 Agent、并行 fan-out、应用级持久检查点）
 - OpenTelemetry（可选，OTLP/HTTP）
 - pytest / pytest-asyncio、Ruff、mypy（strict）、GitHub Actions
 - Docker / Docker Compose
@@ -35,6 +37,7 @@ app/
   db/                  # Base、模型、租户守卫、RLS、引擎
   rag/                 # 解析、分块、embedding、对象存储、Qdrant、混合检索
   collector/           # 搜索 Provider、SSRF 安全抓取、robots、worker、来源/快照
+  agent/               # LangGraph Supervisor、专业 Agent、只读工具、预算、runner/worker
   schemas/             # API schema
   services/            # 租户/成员/用户/审计/文档/RAG 编排
 alembic/               # 迁移
@@ -87,10 +90,15 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000 --no-access-log
 
 # 另开进程运行采集 worker（COLLECTOR_ENABLED=true 时）
 python -m app.collector.worker
+
+# 另开进程运行多 Agent 研究 worker（AGENT_ENABLED=true 时）
+python -m app.agent.worker
 ```
 
 或使用 Makefile（`make install-dev`、`make migrate`、`make run`）。
-Docker Compose 会同时启动 `collector` worker；它没有入站端口。
+Docker Compose 会同时启动 `collector` 与 `agent` worker；两者都没有入站端口。
+`.env.example` 默认使用 `AGENT_PROVIDER=deterministic` 的本地确定性模型契约桩，
+只用于开发和接口验证；生产必须配置 `AGENT_PROVIDER=http` 与受控 https 模型网关。
 
 ### 4. 验证
 
@@ -232,6 +240,54 @@ market-intel provision-user \
 - 外部网页内容只作为数据；不执行其中指令。`COLLECTOR_ENABLED=false` 时相关 API
   fail closed 返回 503。
 
+## 多 Agent 调研（LangGraph）
+
+- **运行模型**：`POST /research-runs` 只做授权、持久化和入队；独立
+  `python -m app.agent.worker` 通过 PostgreSQL lease + `FOR UPDATE SKIP LOCKED`
+  认领 run，遍历 active tenant 并显式绑定租户上下文。worker 无入站端口，崩溃后
+  过期 lease 可从最后一个检查点恢复。
+- **Supervisor + 专业 Agent**：LangGraph `StateGraph` 的 Supervisor 制定计划，
+  使用 `Send` 并行 fan-out 到 `industry`、`competitor`、`user` 专业 Agent；完成后
+  聚合、判断是否在有界预算内补查，再 finalize。不存在开放式 Agent 互聊。
+- **结构化发现**：每个 finding 包含 `claim`、证据原文 `evidence`、`source_id`、
+  `agent_role`、`observed_at`、`scope`、`limitations`、`confidence` 和
+  `evidence_untrusted=true`。文档来源保存 document/version/chunk 与页码/段落/offset，
+  外部来源保存 WebSource/Snapshot；无法通过引用校验的 finding 会被丢弃。
+- **工具最小权限**：只注册 `knowledge_search`、`source_search`、`source_read`、
+  `web_search` 四个只读工具，没有采集写入、来源删除、成员/角色修改、任意 HTTP 或
+  任意 SQL 工具。worker 在运行开始及每个 superstep 后按请求者当前 DB 角色重新授权，
+  不使用 JWT 角色声明。
+  RAG 工具只接收已授权 `DocumentAccessScope`；来源工具要求真实 workspace/org 角色；
+  web search 额外要求 workspace editor+。仅有项目角色的用户可运行项目文档 RAG 调研，
+  但不能使用 workspace-wide 外部来源库；工作区级 run 同样要求真实 workspace/org 角色，
+  不接受项目成员的祖先只读回退。
+- **不可信输入**：RAG chunk 与网页快照均标记为不可信数据。模型返回的
+  `evidence_id` 必须存在于本次授权证据集合中，`evidence_quote` 必须能在原文中匹配；
+  否则 finding 被拒绝。常见提示注入文本会被标记 `injection_suspected=true` 供阶段 6
+  复核，但安全不依赖该启发式规则：工具集合固定、来源服务端校验、模型不能调用任意工具。
+- **预算治理**：run 保存 token/成本/tool-call/时间/轮数/并行度/最大 finding 数等
+  server-side 预算。plan、每个专业 Agent 和每次模型调用都受预算切片约束；并行任务
+  按剩余预算均分，预算耗尽会持久化为 `budget_exhausted`，不会无限循环。
+- **检查点与回放**：每个 LangGraph superstep 后将完整 JSON 状态写入
+  `research_checkpoints`，同事务更新 run 的 usage、round、plan 和计数。暂停/恢复和
+  worker 崩溃恢复都从最后检查点继续；`GET .../checkpoints` 返回可审计的回放状态。
+  当前“回放”是状态/轨迹检查，不是对外部模型调用的确定性重放。未使用 LangGraph 原生
+  checkpoint 表，因为它不满足本项目的 tenant/RLS 约束。
+- **人工控制**：`pause`、`resume`、`cancel` API 均是服务端授权操作；运行中的 pause/
+  cancel 在当前 superstep 完成后生效，并将状态持久化。恢复时跳过已完成 task，只继续
+  未完成或可重试 task，避免重复 finding。每个 superstep 后重新加载请求者成员关系与
+  document/tool scope；权限/能力变化或控制权丢失会把 run 标记为 failed，停止后续步骤。
+- **模型网关**：`ResearchModel` 抽象提供 `deterministic`（本地契约测试桩）与通用
+  `http` JSON contract。模型 URL/密钥仅来自环境/Secret Manager；production 强制
+  `AGENT_PROVIDER=http` + https。run 记录创建时的 `model_provider`/`model_name`/
+  `graph_version` 以便回放和审计；worker 会校验当前 provider/model/graph version 与
+  run 创建时一致，不一致则安全失败，避免静默换模型。模型网关会收到租户授权范围内的
+  证据文本，部署方必须将其纳入数据跨境/供应商评审；当前阶段未实现 PII 自动脱敏。
+- **失败隔离**：单个专业 Agent 的工具/模型失败不会丢弃其他 Agent 的成功结果；
+  task 在预算内有限重试，最终可标记 `partial`。provider/plan 失败、无授权工具、
+  授权被撤销或无 finding 会明确落为 failed/budget_exhausted 状态。
+- `AGENT_ENABLED=false` 时研究 API fail closed 返回 503；文档、采集和身份 API 不受影响。
+
 ## 多租户与数据库约束
 
 - 身份中间件从已验证 JWT 绑定 `tenant_id` ContextVar；业务代码不能从客户端
@@ -276,7 +332,26 @@ market-intel provision-user \
 | POST | `/api/v1/workspaces/{id}/collection-tasks/{task_id}/retry` | workspace editor+ |
 | GET | `/api/v1/workspaces/{id}/sources` | `workspace:content_read` |
 | GET/DELETE | `/api/v1/workspaces/{id}/sources/{source_id}` | `workspace:content_read` / workspace admin |
+| POST/GET | `/api/v1/workspaces/{id}/research-runs` | research editor+ / research read（带 `project_id` 用项目作用域） |
+| GET | `/api/v1/workspaces/{id}/research-runs/{run_id}` | research read |
+| POST | `/api/v1/workspaces/{id}/research-runs/{run_id}/pause` | research control（editor+） |
+| POST | `/api/v1/workspaces/{id}/research-runs/{run_id}/resume` | research control（editor+） |
+| POST | `/api/v1/workspaces/{id}/research-runs/{run_id}/cancel` | research control（editor+） |
+| GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/findings` | research read |
+| GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/checkpoints` | research read（回放状态） |
+| GET | `/api/v1/workspaces/{id}/research-runs/{run_id}/tool-calls` | research read（只读工具轨迹） |
 | GET | `/api/v1/audit-events` | tenant_admin |
+
+研究 run 创建示例（随后由 `python -m app.agent.worker` 执行）：
+
+```json
+POST /api/v1/workspaces/{workspace_id}/research-runs
+{
+  "objective": "评估 2026 年企业级市场机会、竞品与客户采用障碍",
+  "project_id": null,
+  "request_key": "optional-idempotency-key"
+}
+```
 
 统一错误响应：
 
@@ -321,6 +396,19 @@ market-intel provision-user \
 | `COLLECTOR_TASK_LEASE_SECONDS` / `COLLECTOR_MAX_ATTEMPTS` / `COLLECTOR_RETRY_*` | worker 租约、重试上限/退避 |
 | `WEB_SEARCH_PROVIDER` / `WEB_SEARCH_API_URL` / `WEB_SEARCH_API_KEY` | `none`/`http` 搜索 Provider 与凭证 |
 | `WEB_SEARCH_API_KEY_HEADER` / `WEB_SEARCH_TIMEOUT_SECONDS` / `WEB_SEARCH_MAX_RESULTS` | 搜索 Provider 细节 |
+| `AGENT_ENABLED` | 启用多 Agent 研究 API 与 worker；false 时 fail closed 503 |
+| `AGENT_PROVIDER` | `deterministic`（仅开发/测试契约桩）/ `http`；production 必须 `http` |
+| `AGENT_MODEL` / `AGENT_API_URL` / `AGENT_API_KEY` / `AGENT_API_KEY_HEADER` | 模型网关标识、https 地址与密钥；密钥不得写入代码 |
+| `AGENT_PROVIDER_TIMEOUT_SECONDS` / `AGENT_PROVIDER_MAX_RETRIES` / `AGENT_PROVIDER_RETRY_BASE_SECONDS` | 模型网关超时与有限重试 |
+| `AGENT_MAX_RESPONSE_BYTES` / `AGENT_MAX_OBJECTIVE_CHARS` | 模型响应与调研目标上限 |
+| `AGENT_MAX_ROUNDS` / `AGENT_MAX_PARALLEL_TASKS` / `AGENT_MAX_TASK_ATTEMPTS` | 轮数、并行 Agent、单任务重试上限 |
+| `AGENT_MAX_FINDINGS_PER_TASK` / `AGENT_MAX_FINDINGS` / `AGENT_MAX_EVIDENCE_ITEMS` / `AGENT_MAX_EVIDENCE_CHARS` / `AGENT_MAX_LEADS` | 证据与 finding 数量/文本上限 |
+| `AGENT_MAX_INPUT_TOKENS` / `AGENT_MAX_OUTPUT_TOKENS` / `AGENT_MAX_OUTPUT_TOKENS_PER_CALL` | token 预算 |
+| `AGENT_MAX_COST_MICROS` / `AGENT_INPUT_COST_MICROS_PER_1K` / `AGENT_OUTPUT_COST_MICROS_PER_1K` | 成本预算与单价；0 表示不设置该成本上限/单价 |
+| `AGENT_MAX_TOOL_CALLS` / `AGENT_MAX_TOOL_CALLS_PER_TASK` | 工具调用预算 |
+| `AGENT_MAX_SECONDS` / `AGENT_TASK_TIMEOUT_SECONDS` / `AGENT_MIN_FINDINGS_FOR_FOLLOWUP` | 总时长/单任务超时/触发补查的 finding 下限 |
+| `AGENT_MAX_CHECKPOINT_BYTES` | 单检查点状态大小上限 |
+| `AGENT_MAX_CONCURRENT_RUNS` / `AGENT_POLL_INTERVAL_SECONDS` / `AGENT_RUN_LEASE_SECONDS` / `AGENT_MAX_RUN_ATTEMPTS` | worker 并发、轮询、lease 与恢复上限 |
 | `OIDC_ENABLED` | production 必须为 true |
 | `OIDC_ISSUER` / `OIDC_AUDIENCE` / `OIDC_JWKS_URI` | 签发方、受众、JWKS；production 必须 https |
 | `OIDC_ALGORITHMS` | 非对称算法列表，默认 `RS256` |
@@ -336,7 +424,8 @@ market-intel provision-user \
 生产环境启动强校验：禁止 `DEBUG`、`DB_ECHO`、非 JSON 日志、通配符 host/CORS；
 必须启用 OIDC 且 issuer/JWKS 使用 https；启用 RAG 时必须使用 S3、HTTP embedding、
 https endpoint，并禁止本地 Qdrant 模式与自动建桶；启用采集时禁止私网目标、只允许
-80/443、要求 S3/TLS，搜索 Provider URL 必须 https。敏感字段不出现在 `repr`；日志对
+80/443、要求 S3/TLS，搜索 Provider URL 必须 https；启用 Agent 时 `AGENT_PROVIDER`
+必须为 `http`，`AGENT_API_URL` 必须为 https。敏感字段不出现在 `repr`；日志对
 token/authorization/password/api_key 等 key 递归脱敏。
 
 > embedding 模型/版本或维度变更后必须重建索引（重新索引现有版本或写入新版本）；
@@ -347,8 +436,9 @@ token/authorization/password/api_key 等 key 递归脱敏。
 - 成功变更：`tenant.created`、`user.provisioned`、`organization.created/updated`、
   `workspace.created/updated`、`project.created/updated`、
   `membership.granted/revoked`、`document.uploaded/indexed/deleted`、
-  `collection.task_queued/succeeded`、`source.created/updated/deleted`，与业务变更
-  同事务写入。
+  `collection.task_queued/succeeded`、`source.created/updated/deleted`、
+  `research_run.created/paused/resumed/canceled/completed/failed/budget_exhausted`，
+  与业务变更同事务写入。
 - 失败/拒绝：`authorization.denied`、`document.index_failed`、`document.delete_failed`、
   `collection.task_failed`、`source.delete_failed`，用独立短事务/终态事务写入，
   避免请求回滚后丢失。
@@ -357,6 +447,8 @@ token/authorization/password/api_key 等 key 递归脱敏。
 - JSON 日志包含 `request_id`、`tenant_id`、`trace_id`/`span_id`；访问日志不含查询串与
   请求体。可选 OpenTelemetry 导出 FastAPI/SQLAlchemy/HTTPX span，健康探针 excluded。
 - RAG/采集启用时 readiness 额外检查对象存储与 Qdrant collection（采集仅检查对象存储）。
+  Agent 模型网关不纳入 readiness（无标准健康契约）；provider 故障会以 run 失败/重试
+  状态和结构化日志体现。
 
 ## 测试与检查
 
@@ -386,6 +478,14 @@ worker 快照/来源去重、失败重试/人工 retry、私网 URL 拒绝、跨
 压缩限制（本地 HTTP server）、robots 解析/缓存/状态映射、HTML 抽取、搜索 Provider
 contract、本地对象存储路径安全和采集状态租约。
 
+阶段 5 单元测试覆盖：LangGraph specialist 并行、结构化 finding、引用/来源校验、
+恶意来源提示注入标记、预算耗尽提前停止、轮数上限、专业 Agent 失败后的有限重试、
+HTTP 模型网关非法角色/超大响应/瞬时重试/不可信证据 contract、Agent 配置与生产
+https 强校验。集成测试覆盖：run 创建/幂等/跨租户 404/项目作用域、只读工具轨迹、
+finding 指向真实 WebSource、checkpoint 回放、pending 暂停/恢复、运行中暂停后从
+检查点恢复且不重跑已完成工具、运行中撤销成员权限后失败、取消、预算耗尽状态持久化、
+项目成员不得读取 workspace 级 run，以及研究表 RLS。
+
 CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升级/回滚/再升级、
 `alembic check`、全部测试，并构建 runtime Docker 镜像。
 
@@ -401,15 +501,24 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
 - [ADR-0008：混合检索、ACL 回查与版本/删除传播](docs/adr/0008-hybrid-retrieval.md)
 - [ADR-0009：搜索 Provider 边界与隔离采集 worker](docs/adr/0009-search-provider-collector.md)
 - [ADR-0010：SSRF 防护、快照去重与采集重试](docs/adr/0010-collection-security.md)
+- [ADR-0011：LangGraph Supervisor、并行 Agent 与持久检查点](docs/adr/0011-langgraph-supervisor-checkpoints.md)
+- [ADR-0012：Agent 工具最小权限、不可信证据与预算治理](docs/adr/0012-agent-tool-security-budgets.md)
 - [ADR 模板](docs/adr/0000-template.md)
 - [工程规范](docs/engineering-standards.md)
+- [Agent 模型网关契约](docs/agent-model-gateway.md)
 
-## 本阶段限制 / 阶段 5 依赖
+## 本阶段限制 / 阶段 6 依赖
 
-- 未实现 LangGraph 多 Agent、claim/evidence/source 数据模型、证据审查、报告导出、
-  Temporal/Kafka、监测与通知。
-- 搜索 Provider 只定义通用 HTTP JSON contract，未实现具体商业搜索供应商 SDK；结果
-  仍是候选 URL，不代表已采集或已授权来源。
+- 已实现阶段 5 的 LangGraph Supervisor/专业 Agent/持久检查点；尚未实现阶段 6 的
+  evidence reviewer、冲突/独立性/新鲜度复核、有限补查循环、报告版本与导出。
+- finding 是“证据绑定草稿”，不是经复核的最终结论；`injection_suspected` 只是启发式
+  标记，不能替代阶段 6 的证据审查。
+- run/finding/checkpoint 的读取 ACL 是 run 的 workspace/project ACL；finding 中的证据
+  摘录会随 run 提供给有 run 读权限的项目成员。创建时已按请求者权限选择证据，但生成后
+  不会对每个读者重新逐个来源鉴权。阶段 6 需要补充引用级 ACL/来源删除后的引用策略。
+- 搜索 Provider 只定义通用 HTTP JSON contract，未实现具体商业搜索供应商 SDK；web
+  search 返回的未采集 URL 只是 lead，不能作为 finding 证据；必须先由采集流程形成
+  WebSource/Snapshot 才可引用。
 - 采集只支持 static HTML/plain text/xhtml，不执行 JavaScript、不做浏览器渲染、不采集
   PDF/图片/附件，也不做 OCR。网页抓取在 worker 进程执行，但不是独立网络命名空间/容器；
   生产建议把 collector worker 部署到受控 egress 网络。
@@ -420,9 +529,31 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
   tracking URL 可能形成不同来源。
 - 域名 allow/block 是部署级配置，尚无租户级域名策略、每租户并发/带宽配额；阶段 8/9
   补齐。域名速率是起始速率，不是完整带宽或抓取并发控制。
-- 来源是可阅读的外部资料与快照，尚未自动进入 RAG 索引；阶段 5/6 负责 Agent 使用与
-  证据绑定。快照是原始不可信内容，任何下游模型必须按数据处理。
-- 未实现租户级上传/embedding/采集配额与成本归集；阶段 8/9 补齐。
+- 来源是可阅读的外部资料与快照，尚未自动进入 RAG 索引；Agent 通过 `source_search`
+  读取已采集快照，不执行新的网页抓取。快照是原始不可信内容，任何下游模型必须按数据
+  处理。
+- `AGENT_PROVIDER=deterministic` 只是本地契约桩，不具备真实市场研究能力；生产必须
+  配置经批准的 HTTP 模型网关。HTTP 网关 contract 仅用 mock transport 验证，未联调
+  真实商业/内部模型服务。run 记录创建时的模型名与图版本，worker 配置不一致会
+  使 run 失败；模型/图升级时应先排空 pending/paused run 或明确重跑。模型网关会接收
+  授权范围内的证据文本，当前未实现 PII 自动脱敏、供应商数据保留策略或跨租户模型
+  缓存隔离；这些属于部署治理与阶段 9。
+- Agent 工具选择采用有界、固定的只读搜索流程，不向模型开放任意工具调用/代码执行；
+  这降低提示注入风险，但也限制复杂自主工具编排，后续可在同一授权边界内扩展。
+- 模型接入为单一配置的 HTTP gateway + 服务端预算/超时/有限重试；尚未实现多供应商
+  路由、模型级 QPS 限流、跨 run 成本归集或按角色选择模型，阶段 8/9 补齐。
+- 持久检查点由应用在 LangGraph superstep 后写入租户表，不是 LangGraph 原生
+  checkpointer；暂停/取消/权限变更在 superstep 边界生效，不保证中断进行中的单个
+  模型/工具调用；该 superstep 已产生的 finding 会保留供审计。阶段 7 由 Temporal 补齐
+  跨服务持久编排、outbox、取消与死信。
+- failed/budget_exhausted 为终态；本阶段只支持 paused 的 resume，没有 failed 重跑、
+  提高预算或所有权转移 API。局部 task 重试在 run 内完成；跨 run 的人工恢复/审批流
+  属于阶段 7/8。
+- agent worker 使用 PostgreSQL lease 队列，不是 Temporal/Kafka；多 worker 依赖 lease
+  与 heartbeat，极端时钟/网络分区场景需阶段 7/9 的运维验证。
+- 来源搜索目前是参数化 ILIKE 候选，未建立外部快照全文索引；大规模来源库需要专用
+  检索/索引方案。
+- 未实现租户级上传/embedding/采集/Agent 配额与成本归集；阶段 8/9 补齐。
 - 文档支持 `.txt`/`.md`/`.pdf`；OCR、DOCX、表格/图片与更复杂版式解析未实现；未接入
   恶意文件扫描，解析在受限线程而非独立沙箱进程运行，部署需补充恶意内容检测与资源限制。
 - 关键词检索为 PostgreSQL 全文 + 参数化 ILIKE 回退，未接入专用 BM25/OpenSearch；

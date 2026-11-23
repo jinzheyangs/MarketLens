@@ -9,7 +9,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.context import tenant_context
-from app.db.models import Document, Organization, Tenant, Workspace
+from app.db.models import Document, Organization, ResearchRun, Tenant, Workspace
 
 pytestmark = pytest.mark.integration
 
@@ -29,6 +29,10 @@ _RLS_TABLES = {
     "web_sources",
     "collection_tasks",
     "source_snapshots",
+    "research_runs",
+    "research_checkpoints",
+    "research_findings",
+    "research_tool_calls",
 }
 
 
@@ -268,3 +272,82 @@ async def test_composite_foreign_key_blocks_cross_tenant_parent(
                 )
             )
             await session.commit()
+
+
+async def test_research_runs_are_rls_protected(
+    engine: AsyncEngine,
+    session_factory: async_sessionmaker[AsyncSession],
+    tenants_and_orgs: tuple[UUID, UUID, UUID, UUID],
+    non_superuser_role: str,
+) -> None:
+    tenant_a, tenant_b, org_a, org_b = tenants_and_orgs
+    workspace_a = uuid4()
+    workspace_b = uuid4()
+    run_a = uuid4()
+    run_b = uuid4()
+
+    with tenant_context(tenant_a):
+        async with session_factory() as session:
+            session.add(
+                Workspace(
+                    id=workspace_a,
+                    tenant_id=tenant_a,
+                    organization_id=org_a,
+                    slug=f"rls-research-ws-a-{workspace_a.hex[:8]}",
+                    name="RLS Research A",
+                )
+            )
+            await session.flush()
+            session.add(
+                ResearchRun(
+                    id=run_a,
+                    tenant_id=tenant_a,
+                    workspace_id=workspace_a,
+                    objective="Tenant A research",
+                    model_provider="deterministic",
+                    model_name="test",
+                    graph_version="stage5-v1",
+                    max_rounds=1,
+                    max_attempts=1,
+                )
+            )
+            await session.commit()
+
+    with tenant_context(tenant_b):
+        async with session_factory() as session:
+            session.add(
+                Workspace(
+                    id=workspace_b,
+                    tenant_id=tenant_b,
+                    organization_id=org_b,
+                    slug=f"rls-research-ws-b-{workspace_b.hex[:8]}",
+                    name="RLS Research B",
+                )
+            )
+            await session.flush()
+            session.add(
+                ResearchRun(
+                    id=run_b,
+                    tenant_id=tenant_b,
+                    workspace_id=workspace_b,
+                    objective="Tenant B research",
+                    model_provider="deterministic",
+                    model_name="test",
+                    graph_version="stage5-v1",
+                    max_rounds=1,
+                    max_attempts=1,
+                )
+            )
+            await session.commit()
+
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        await connection.execute(text(f'SET LOCAL ROLE "{non_superuser_role}"'))
+        await connection.execute(
+            text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(tenant_a)},
+        )
+        rows = (await connection.execute(text("SELECT id FROM research_runs"))).scalars().all()
+        await transaction.rollback()
+
+    assert rows == [run_a]

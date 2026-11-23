@@ -15,6 +15,12 @@ from app.db.models.membership import (
 )
 from app.db.models.organization import Organization
 from app.db.models.project import Project
+from app.db.models.research import (
+    ResearchCheckpoint,
+    ResearchFinding,
+    ResearchRun,
+    ResearchToolCall,
+)
 from app.db.models.tenant import Tenant
 from app.db.models.user import User
 from app.db.models.workspace import Workspace
@@ -30,6 +36,10 @@ __all__ = [
     "OrganizationMembership",
     "Project",
     "ProjectMembership",
+    "ResearchCheckpoint",
+    "ResearchFinding",
+    "ResearchRun",
+    "ResearchToolCall",
     "SourceSnapshot",
     "Tenant",
     "User",

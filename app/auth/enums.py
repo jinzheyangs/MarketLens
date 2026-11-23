@@ -68,6 +68,9 @@ class ResourceType(StrEnum):
     COLLECTION_TASK = "collection_task"
     SOURCE = "source"
     SOURCE_SNAPSHOT = "source_snapshot"
+    RESEARCH_RUN = "research_run"
+    RESEARCH_CHECKPOINT = "research_checkpoint"
+    RESEARCH_FINDING = "research_finding"
 
 
 class Permission(StrEnum):
@@ -89,6 +92,10 @@ class Permission(StrEnum):
     PROJECT_MANAGE_CLASSIFICATION = "project:manage_classification"
     PROJECT_MANAGE_STATUS = "project:manage_status"
     PROJECT_MANAGE_MEMBERS = "project:manage_members"
+
+    RESEARCH_RUN_CREATE = "research_run:create"
+    RESEARCH_RUN_READ = "research_run:read"
+    RESEARCH_RUN_CONTROL = "research_run:control"
 
     USER_READ = "user:read"
     USER_MANAGE = "user:manage"
@@ -119,4 +126,11 @@ class AuditAction(StrEnum):
     SOURCE_UPDATED = "source.updated"
     SOURCE_DELETED = "source.deleted"
     SOURCE_DELETE_FAILED = "source.delete_failed"
+    RESEARCH_RUN_CREATED = "research_run.created"
+    RESEARCH_RUN_PAUSED = "research_run.paused"
+    RESEARCH_RUN_RESUMED = "research_run.resumed"
+    RESEARCH_RUN_CANCELED = "research_run.canceled"
+    RESEARCH_RUN_COMPLETED = "research_run.completed"
+    RESEARCH_RUN_FAILED = "research_run.failed"
+    RESEARCH_RUN_BUDGET_EXHAUSTED = "research_run.budget_exhausted"
     AUTHORIZATION_DENIED = "authorization.denied"

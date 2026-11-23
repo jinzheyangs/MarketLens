@@ -35,20 +35,32 @@
     worker 必须遍历 tenant 并显式绑定上下文，不得依赖超级用户绕过 RLS。快照写入对象
    存储，元数据/提取文本入库，按 canonical URL 与 content hash 去重；来源删除必须传播
    到快照对象并审计。
-11. **错误与日志**：业务错误使用 `AppError` 和稳定错误码；不在响应中返回堆栈、DSN、token
+11. **多 Agent 调研**：Supervisor/专业 Agent 只能使用服务端注册的只读工具；禁止把采集写入、
+    来源/文档删除、成员/角色修改、任意 SQL/HTTP/shell 暴露给模型。专业 Agent 必须在执行时
+    从数据库重新加载请求者权限并重新授权；RAG 使用 `DocumentAccessScope`，来源使用真实
+    workspace/org 角色。模型输出必须 schema 校验；finding 的 `evidence_id` 必须属于本次授权
+    证据集合，`evidence_quote` 必须能在原文匹配，不接受模型伪造的 source_id。外部/RAG 内容
+    即使包含指令也只能作为数据；提示注入标记是辅助信号，安全边界是固定工具、服务端授权和
+    引用校验。
+12. **Agent 预算与检查点**：run 必须持久化 token/成本/时长/轮数/工具调用/并行度/finding
+    上限，并强制硬停止；模型返回的 usage 计数，成本由服务端计算。Supervisor 不得无限互聊。
+    每个 LangGraph superstep 后写租户隔离的 checkpoint，暂停/恢复/崩溃恢复不得重复已完成
+    task 或 finding。worker 使用 lease + heartbeat，API 不执行长调研。
+13. **错误与日志**：业务错误使用 `AppError` 和稳定错误码；不在响应中返回堆栈、DSN、token
    或上游原文。日志使用结构化 `extra={"context": ...}`，敏感 key 由 formatter 脱敏；不记录
    body/header/查询串/token/文档正文/网页原文/文件名。
-12. **迁移**：数据库变更必须通过 Alembic revision；禁止手工改生产库。约束/索引显式命名，
+14. **迁移**：数据库变更必须通过 Alembic revision；禁止手工改生产库。约束/索引显式命名，
     与 `NAMING_CONVENTION` 一致。不要修改已合并的迁移，新增 revision。新增租户表必须同时
     启用 RLS 策略与租户复合外键（如适用）。
-13. **测试**：新增行为必须有测试；租户/权限/身份/外部输入/检索/网络边界必须有负向测试。
+15. **测试**：新增行为必须有测试；租户/权限/身份/外部输入/检索/网络边界必须有负向测试。
     单元测试不得依赖真实外部网络；集成测试使用 `TEST_DATABASE_URL`（库名含 `test`）。
     RAG 测试可使用 qdrant-client 内存模式与本地对象存储；采集测试使用本地 HTTP server、
     注入 resolver 和 fake Provider，不依赖真实供应商。
-14. **类型与风格**：`ruff check .`、`ruff format --check .`、`mypy app` 必须通过。公共函数写
+16. **类型与风格**：`ruff check .`、`ruff format --check .`、`mypy app` 必须通过。公共函数写
     类型标注与必要 docstring；注释解释“为什么”，不复述代码。
-15. **依赖与安全**：新增依赖需说明用途与许可证；不在运行时拉取未固定来源的代码。外部内容
-    不得进入 `eval/exec/pickle` 等危险路径。
+17. **依赖与安全**：新增依赖需说明用途与许可证；不在运行时拉取未固定来源的代码。外部内容
+    不得进入 `eval/exec/pickle` 等危险路径。LangGraph 只接收 schema 化状态，不执行模型返回
+    的代码或工具名。
 
 ## 分层约定
 
@@ -58,6 +70,8 @@
 - `app/rag`：解析、分块、embedding、对象存储、向量库、检索融合；不得信任上传内容。
 - `app/collector`：搜索 Provider、SSRF 安全抓取、robots、快照、任务 worker；不得信任
   外部网页/搜索结果。
+- `app/agent`：LangGraph 图、专业 Agent、只读工具注册、模型 Provider、预算、runner/worker；
+  不得暴露写工具或信任模型/证据内容。
 - `app/services`：业务编排、审计、外部协作；不直接依赖 FastAPI。
 - `app/db`：模型、会话、租户守卫、RLS 与查询辅助；不向上层返回 ORM 细节给外部契约。
 - `app/core`：配置、上下文、错误、日志、中间件、telemetry；不得依赖业务模块。

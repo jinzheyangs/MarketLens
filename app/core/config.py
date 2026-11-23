@@ -164,6 +164,45 @@ class Settings(BaseSettings):
     web_search_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
     web_search_max_results: int = Field(default=10, ge=1, le=50)
 
+    # LangGraph research agents. The model gateway is operator-controlled; user
+    # supplied URLs are never used. Deterministic is a local development/test
+    # provider and is rejected in production.
+    agent_enabled: bool = False
+    agent_provider: Literal["deterministic", "http"] = "deterministic"
+    agent_model: str = Field(default="deterministic-v1", max_length=100)
+    agent_api_url: str | None = None
+    agent_api_key: SecretStr | None = Field(default=None, repr=False)
+    agent_api_key_header: str = "Authorization"
+    agent_provider_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    agent_provider_max_retries: int = Field(default=2, ge=0, le=10)
+    agent_provider_retry_base_seconds: float = Field(default=0.5, ge=0, le=60)
+    agent_max_response_bytes: int = Field(default=1_000_000, ge=1024, le=10_000_000)
+    agent_max_objective_chars: int = Field(default=2_000, ge=50, le=10_000)
+    agent_max_rounds: int = Field(default=3, ge=1, le=10)
+    agent_max_parallel_tasks: int = Field(default=6, ge=1, le=20)
+    agent_max_task_attempts: int = Field(default=2, ge=1, le=5)
+    agent_max_findings_per_task: int = Field(default=5, ge=1, le=20)
+    agent_max_findings: int = Field(default=50, ge=1, le=500)
+    agent_max_evidence_items: int = Field(default=5, ge=1, le=20)
+    agent_max_evidence_chars: int = Field(default=4_000, ge=200, le=20_000)
+    agent_max_leads: int = Field(default=10, ge=0, le=50)
+    agent_max_input_tokens: int = Field(default=120_000, ge=1, le=2_000_000)
+    agent_max_output_tokens: int = Field(default=30_000, ge=1, le=500_000)
+    agent_max_output_tokens_per_call: int = Field(default=4_000, ge=1, le=32_000)
+    agent_max_cost_micros: int = Field(default=2_000_000, ge=0, le=10_000_000_000)
+    agent_input_cost_micros_per_1k: int = Field(default=0, ge=0, le=1_000_000)
+    agent_output_cost_micros_per_1k: int = Field(default=0, ge=0, le=1_000_000)
+    agent_max_tool_calls: int = Field(default=48, ge=1, le=1_000)
+    agent_max_tool_calls_per_task: int = Field(default=4, ge=1, le=20)
+    agent_max_seconds: int = Field(default=600, ge=10, le=86_400)
+    agent_task_timeout_seconds: float = Field(default=120.0, gt=0, le=3_600)
+    agent_min_findings_for_followup: int = Field(default=2, ge=0, le=100)
+    agent_max_checkpoint_bytes: int = Field(default=1_000_000, ge=10_000, le=5_000_000)
+    agent_max_concurrent_runs: int = Field(default=2, ge=1, le=16)
+    agent_poll_interval_seconds: float = Field(default=2.0, ge=0.1, le=60)
+    agent_run_lease_seconds: int = Field(default=300, ge=30, le=3_600)
+    agent_max_run_attempts: int = Field(default=3, ge=1, le=10)
+
     # HTTP / API behavior.
     log_level: LogLevel = "INFO"
     log_format: Literal["json", "console"] = "json"
@@ -216,6 +255,7 @@ class Settings(BaseSettings):
         "s3_access_key",
         "s3_secret_key",
         "web_search_api_key",
+        "agent_api_key",
         mode="before",
     )
     @classmethod
@@ -258,6 +298,7 @@ class Settings(BaseSettings):
         "embedding_model",
         "embedding_version",
         "s3_region",
+        "agent_model",
     )
     @classmethod
     def _require_non_empty_text(cls, value: str) -> str:
@@ -271,11 +312,23 @@ class Settings(BaseSettings):
     def _validate_web_search_url(cls, value: str | None) -> str | None:
         return _validate_service_url(value, "WEB_SEARCH_API_URL")
 
+    @field_validator("agent_api_url")
+    @classmethod
+    def _validate_agent_api_url(cls, value: str | None) -> str | None:
+        return _validate_service_url(value, "AGENT_API_URL")
+
     @field_validator("web_search_api_key_header")
     @classmethod
     def _validate_api_key_header(cls, value: str) -> str:
         if not _HEADER_NAME_PATTERN.fullmatch(value):
             raise ValueError("WEB_SEARCH_API_KEY_HEADER must be a valid header name")
+        return value
+
+    @field_validator("agent_api_key_header")
+    @classmethod
+    def _validate_agent_api_key_header(cls, value: str) -> str:
+        if not _HEADER_NAME_PATTERN.fullmatch(value):
+            raise ValueError("AGENT_API_KEY_HEADER must be a valid header name")
         return value
 
     @field_validator("collector_user_agent")
@@ -539,6 +592,19 @@ class Settings(BaseSettings):
         if self.collector_enabled and self.object_storage_backend == "s3" and not self.s3_bucket:
             raise ValueError("COLLECTOR_ENABLED with S3 requires S3_BUCKET")
 
+        if self.agent_enabled and self.agent_provider == "http" and not self.agent_api_url:
+            raise ValueError("AGENT_PROVIDER=http requires AGENT_API_URL")
+        if self.agent_max_output_tokens_per_call > self.agent_max_output_tokens:
+            raise ValueError(
+                "AGENT_MAX_OUTPUT_TOKENS_PER_CALL must not exceed AGENT_MAX_OUTPUT_TOKENS"
+            )
+        if self.agent_max_tool_calls_per_task > self.agent_max_tool_calls:
+            raise ValueError("AGENT_MAX_TOOL_CALLS_PER_TASK must not exceed AGENT_MAX_TOOL_CALLS")
+        if self.agent_task_timeout_seconds > self.agent_max_seconds:
+            raise ValueError("AGENT_TASK_TIMEOUT_SECONDS must not exceed AGENT_MAX_SECONDS")
+        if self.agent_min_findings_for_followup > self.agent_max_findings:
+            raise ValueError("AGENT_MIN_FINDINGS_FOR_FOLLOWUP must not exceed AGENT_MAX_FINDINGS")
+
         if self.environment == "production":
             if not self.oidc_enabled:
                 raise ValueError("OIDC_ENABLED must be true in production")
@@ -596,6 +662,13 @@ class Settings(BaseSettings):
                 and urlparse(self.web_search_api_url).scheme != "https"
             ):
                 raise ValueError("WEB_SEARCH_API_URL must use https in production")
+            if self.agent_enabled:
+                if self.agent_provider != "http":
+                    raise ValueError("AGENT_PROVIDER must be http in production")
+                if not self.agent_api_url:
+                    raise ValueError("AGENT_ENABLED requires AGENT_API_URL in production")
+                if urlparse(self.agent_api_url).scheme != "https":
+                    raise ValueError("AGENT_API_URL must use https in production")
         return self
 
     @property

@@ -60,6 +60,7 @@ jobs:
         run: |
           python -m app.cli --help
           python -m app.collector.worker --help
+          python -m app.agent.worker --help
 
       - name: Migration upgrade / downgrade / upgrade / drift check
         run: |

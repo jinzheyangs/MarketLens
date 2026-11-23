@@ -48,6 +48,9 @@ _REQUIRED_ROLE: dict[Permission, ScopeRole] = {
     Permission.PROJECT_MANAGE_CLASSIFICATION: ScopeRole.ADMIN,
     Permission.PROJECT_MANAGE_STATUS: ScopeRole.ADMIN,
     Permission.PROJECT_MANAGE_MEMBERS: ScopeRole.ADMIN,
+    Permission.RESEARCH_RUN_CREATE: ScopeRole.EDITOR,
+    Permission.RESEARCH_RUN_READ: ScopeRole.VIEWER,
+    Permission.RESEARCH_RUN_CONTROL: ScopeRole.EDITOR,
 }
 
 
@@ -178,10 +181,11 @@ class AuthorizationService:
 
         # A descendant membership permits navigation/read of its ancestors but
         # does not grant any write capability there. Workspace-wide content
-        # (external source library) deliberately requires a real workspace role.
+        # (external source library and workspace-level research runs) deliberately
+        # requires a real workspace/organization role.
         if (
             _is_read(permission)
-            and permission != Permission.WORKSPACE_CONTENT_READ
+            and permission not in {Permission.WORKSPACE_CONTENT_READ, Permission.RESEARCH_RUN_READ}
             and self._can_read_ancestor(resource)
         ):
             return ScopeRole.VIEWER

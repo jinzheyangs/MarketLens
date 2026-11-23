@@ -299,3 +299,22 @@ async def test_tenant_admin_requirement_is_audited() -> None:
         await service.require_tenant_admin(Permission.USER_MANAGE)
     assert audit.calls[-1]["reason"] == "tenant_admin_required"
     assert audit.calls[-1]["resource_type"] == ResourceType.TENANT
+
+
+def test_project_member_does_not_gain_workspace_research_read() -> None:
+    org_id, workspace_id, project_id = uuid4(), uuid4(), uuid4()
+    principal = _principal(
+        project_roles={project_id: ScopeRole.EDITOR},
+        workspace_ids={workspace_id},
+        project_ids={project_id},
+    )
+    service = AuthorizationService(principal=principal, denial_audit=RecordingAudit())
+
+    assert not service.evaluate(
+        Permission.RESEARCH_RUN_READ,
+        _workspace(org_id, workspace_id),
+    ).allowed
+    assert service.evaluate(
+        Permission.RESEARCH_RUN_READ,
+        _project(org_id, workspace_id, project_id),
+    ).allowed

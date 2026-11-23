@@ -233,6 +233,7 @@ class HybridRetriever:
                     score=round(final_score, 6),
                     vector_rank=_rank_of(chunk.id, vector_ids),
                     keyword_rank=_rank_of(chunk.id, keyword_ids),
+                    observed_at=version.indexed_at or version.created_at,
                 )
             )
 

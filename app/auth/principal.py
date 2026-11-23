@@ -84,6 +84,41 @@ async def resolve_principal(session: AsyncSession, claims: TokenClaims) -> Princ
     if user.status != UserStatus.ACTIVE:
         raise ForbiddenError
 
+    return await _build_principal(session, tenant=tenant, user=user)
+
+
+async def resolve_principal_for_user(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    user_id: UUID,
+) -> Principal:
+    """Resolve a trusted internal user for a durable worker.
+
+    This is used only after the worker has loaded a tenant-scoped run. It still
+    reloads the active tenant, user, and memberships from PostgreSQL; no role or
+    permission claim is trusted.
+    """
+    tenant = await session.get(Tenant, tenant_id)
+    if tenant is None or tenant.status != TenantStatus.ACTIVE:
+        raise ForbiddenError
+    user = await session.scalar(
+        select(User).where(
+            User.tenant_id == tenant_id,
+            User.id == user_id,
+        )
+    )
+    if user is None or user.status != UserStatus.ACTIVE:
+        raise ForbiddenError
+    return await _build_principal(session, tenant=tenant, user=user)
+
+
+async def _build_principal(
+    session: AsyncSession,
+    *,
+    tenant: Tenant,
+    user: User,
+) -> Principal:
     organization_roles: dict[UUID, ScopeRole] = {}
     workspace_roles: dict[UUID, ScopeRole] = {}
     project_roles: dict[UUID, ScopeRole] = {}
@@ -94,7 +129,7 @@ async def resolve_principal(session: AsyncSession, claims: TokenClaims) -> Princ
 
     org_rows = await session.scalars(
         select(OrganizationMembership).where(
-            OrganizationMembership.tenant_id == claims.tenant_id,
+            OrganizationMembership.tenant_id == tenant.id,
             OrganizationMembership.user_id == user.id,
             OrganizationMembership.status == MembershipStatus.ACTIVE,
         )
@@ -108,8 +143,8 @@ async def resolve_principal(session: AsyncSession, claims: TokenClaims) -> Princ
         select(WorkspaceMembership, Workspace.organization_id)
         .join(Workspace, Workspace.id == WorkspaceMembership.workspace_id)
         .where(
-            WorkspaceMembership.tenant_id == claims.tenant_id,
-            Workspace.tenant_id == claims.tenant_id,
+            WorkspaceMembership.tenant_id == tenant.id,
+            Workspace.tenant_id == tenant.id,
             WorkspaceMembership.user_id == user.id,
             WorkspaceMembership.status == MembershipStatus.ACTIVE,
         )
@@ -125,9 +160,9 @@ async def resolve_principal(session: AsyncSession, claims: TokenClaims) -> Princ
         .join(Project, Project.id == ProjectMembership.project_id)
         .join(Workspace, Workspace.id == Project.workspace_id)
         .where(
-            ProjectMembership.tenant_id == claims.tenant_id,
-            Project.tenant_id == claims.tenant_id,
-            Workspace.tenant_id == claims.tenant_id,
+            ProjectMembership.tenant_id == tenant.id,
+            Project.tenant_id == tenant.id,
+            Workspace.tenant_id == tenant.id,
             ProjectMembership.user_id == user.id,
             ProjectMembership.status == MembershipStatus.ACTIVE,
         )

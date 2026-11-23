@@ -359,3 +359,53 @@ def test_s3_configuration_consistency() -> None:
 
 def test_default_database_url_is_test_scoped() -> None:
     assert "test" in DEFAULT_TEST_DATABASE_URL
+
+
+def test_agent_provider_configuration_validation() -> None:
+    with pytest.raises(ValidationError):
+        make_settings(agent_enabled=True, agent_provider="http")
+    with pytest.raises(ValidationError):
+        make_settings(agent_api_url="https://user:password@models.example.com/v1/research")
+    with pytest.raises(ValidationError):
+        make_settings(agent_api_key_header="Bad Header")
+    with pytest.raises(ValidationError):
+        make_settings(
+            agent_max_output_tokens=100,
+            agent_max_output_tokens_per_call=101,
+        )
+    with pytest.raises(ValidationError):
+        make_settings(
+            agent_max_tool_calls=2,
+            agent_max_tool_calls_per_task=3,
+        )
+    with pytest.raises(ValidationError):
+        make_settings(agent_max_seconds=10, agent_task_timeout_seconds=11)
+    with pytest.raises(ValidationError):
+        make_settings(agent_max_findings=2, agent_min_findings_for_followup=3)
+
+    settings = make_settings(
+        agent_enabled=True,
+        agent_provider="http",
+        agent_api_url="https://models.example.com/v1/research",
+        agent_api_key="agent-secret",
+    )
+    assert settings.agent_api_url == "https://models.example.com/v1/research"
+    assert "agent-secret" not in repr(settings)
+
+
+def test_production_agent_requires_https_model_gateway() -> None:
+    with pytest.raises(ValidationError):
+        make_production_settings(agent_enabled=True, agent_provider="deterministic")
+    with pytest.raises(ValidationError):
+        make_production_settings(
+            agent_enabled=True,
+            agent_provider="http",
+            agent_api_url="http://models.example.com/v1/research",
+        )
+
+    valid = make_production_settings(
+        agent_enabled=True,
+        agent_provider="http",
+        agent_api_url="https://models.example.com/v1/research",
+    )
+    assert valid.agent_enabled is True

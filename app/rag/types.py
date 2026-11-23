@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -115,3 +116,4 @@ class SearchResult:
     score: float
     vector_rank: int | None
     keyword_rank: int | None
+    observed_at: datetime | None = None

@@ -16,6 +16,7 @@ from app.api.v1 import (
     me,
     organizations,
     projects,
+    research,
     users,
     workspaces,
 )
@@ -32,4 +33,5 @@ router.include_router(workspaces.router)
 router.include_router(projects.router)
 router.include_router(documents.router)
 router.include_router(collector.router)
+router.include_router(research.router)
 router.include_router(audit.router)

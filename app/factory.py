@@ -12,6 +12,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.agent.service import AgentServices, build_agent_services
 from app.api.error_handlers import register_exception_handlers
 from app.api.health import router as health_router
 from app.api.v1.router import router as api_v1_router
@@ -47,6 +48,7 @@ def _build_lifespan(
         engine = create_engine(settings)
         rag_services: RagServices | None = None
         collector_services: CollectorServices | None = None
+        agent_services: AgentServices | None = None
         try:
             app.state.engine = engine
             session_factory = create_session_factory(engine)
@@ -61,8 +63,16 @@ def _build_lifespan(
                     session_factory,
                 )
                 await collector_services.ensure_ready()
+            if settings.agent_enabled:
+                agent_services = build_agent_services(
+                    settings,
+                    session_factory,
+                    rag_services=rag_services,
+                    collector_services=collector_services,
+                )
             app.state.rag_services = rag_services
             app.state.collector_services = collector_services
+            app.state.agent_services = agent_services
             app.state.health_service = HealthService(
                 engine=engine,
                 settings=settings,
@@ -83,11 +93,14 @@ def _build_lifespan(
                         "tracing": settings.otel_enabled,
                         "rag": settings.rag_enabled,
                         "collector": settings.collector_enabled,
+                        "agent": settings.agent_enabled,
                     }
                 },
             )
             yield
         finally:
+            if agent_services is not None:
+                await agent_services.aclose()
             if collector_services is not None:
                 await collector_services.aclose()
             if rag_services is not None:
