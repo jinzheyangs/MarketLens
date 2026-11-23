@@ -9,7 +9,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.context import tenant_context
-from app.db.models import Organization, Tenant, Workspace
+from app.db.models import Document, Organization, Tenant, Workspace
 
 pytestmark = pytest.mark.integration
 
@@ -22,6 +22,9 @@ _RLS_TABLES = {
     "workspace_memberships",
     "project_memberships",
     "audit_events",
+    "documents",
+    "document_versions",
+    "document_chunks",
 }
 
 
@@ -173,6 +176,75 @@ async def test_rls_rejects_cross_tenant_insert(
                 },
             )
             await transaction.commit()
+
+
+async def test_document_tables_are_rls_protected(
+    engine: AsyncEngine,
+    session_factory: async_sessionmaker[AsyncSession],
+    tenants_and_orgs: tuple[UUID, UUID, UUID, UUID],
+    non_superuser_role: str,
+) -> None:
+    tenant_a, tenant_b, org_a, org_b = tenants_and_orgs
+    workspace_a = uuid4()
+    workspace_b = uuid4()
+    document_a = uuid4()
+    document_b = uuid4()
+
+    with tenant_context(tenant_a):
+        async with session_factory() as session:
+            session.add(
+                Workspace(
+                    id=workspace_a,
+                    tenant_id=tenant_a,
+                    organization_id=org_a,
+                    slug=f"rls-doc-ws-a-{workspace_a.hex[:8]}",
+                    name="RLS A",
+                )
+            )
+            await session.flush()
+            session.add(
+                Document(
+                    id=document_a,
+                    tenant_id=tenant_a,
+                    workspace_id=workspace_a,
+                    title="Tenant A document",
+                )
+            )
+            await session.commit()
+
+    with tenant_context(tenant_b):
+        async with session_factory() as session:
+            session.add(
+                Workspace(
+                    id=workspace_b,
+                    tenant_id=tenant_b,
+                    organization_id=org_b,
+                    slug=f"rls-doc-ws-b-{workspace_b.hex[:8]}",
+                    name="RLS B",
+                )
+            )
+            await session.flush()
+            session.add(
+                Document(
+                    id=document_b,
+                    tenant_id=tenant_b,
+                    workspace_id=workspace_b,
+                    title="Tenant B document",
+                )
+            )
+            await session.commit()
+
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        await connection.execute(text(f'SET LOCAL ROLE "{non_superuser_role}"'))
+        await connection.execute(
+            text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(tenant_a)},
+        )
+        rows = (await connection.execute(text("SELECT id FROM documents"))).scalars().all()
+        await transaction.rollback()
+
+    assert rows == [document_a]
 
 
 async def test_composite_foreign_key_blocks_cross_tenant_parent(

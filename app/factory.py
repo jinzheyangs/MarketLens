@@ -33,6 +33,7 @@ from app.db.rls import install_rls_context
 from app.db.session import create_engine, create_session_factory
 from app.db.tenant_guard import install_tenant_guard
 from app.services.health import HealthService
+from app.services.rag import RagServices, build_rag_services
 
 logger = get_logger(__name__)
 
@@ -43,10 +44,21 @@ def _build_lifespan(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = create_engine(settings)
+        rag_services: RagServices | None = None
         try:
             app.state.engine = engine
-            app.state.session_factory = create_session_factory(engine)
-            app.state.health_service = HealthService(engine=engine, settings=settings)
+            session_factory = create_session_factory(engine)
+            app.state.session_factory = session_factory
+
+            if settings.rag_enabled:
+                rag_services = build_rag_services(settings, session_factory)
+                await rag_services.ensure_ready()
+            app.state.rag_services = rag_services
+            app.state.health_service = HealthService(
+                engine=engine,
+                settings=settings,
+                rag_services=rag_services,
+            )
 
             telemetry_handle: TelemetryHandle | None = getattr(app.state, "telemetry", None)
             if telemetry_handle is not None:
@@ -59,11 +71,14 @@ def _build_lifespan(
                         "environment": settings.environment,
                         "database": settings.safe_database_url,
                         "tracing": settings.otel_enabled,
+                        "rag": settings.rag_enabled,
                     }
                 },
             )
             yield
         finally:
+            if rag_services is not None:
+                await rag_services.aclose()
             telemetry_handle = getattr(app.state, "telemetry", None)
             if telemetry_handle is not None:
                 telemetry_handle.shutdown()

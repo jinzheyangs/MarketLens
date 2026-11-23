@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from typing import TYPE_CHECKING
 
 import httpx
 from sqlalchemy import text
@@ -17,38 +18,36 @@ from app.core.config import Settings
 from app.core.logging import get_logger
 from app.schemas.health import ComponentHealth, LivenessResponse, ReadinessResponse
 
+if TYPE_CHECKING:
+    from app.services.rag import RagServices
+
 logger = get_logger(__name__)
 
 
 class HealthService:
-    def __init__(self, *, engine: AsyncEngine, settings: Settings) -> None:
+    def __init__(
+        self,
+        *,
+        engine: AsyncEngine,
+        settings: Settings,
+        rag_services: RagServices | None = None,
+    ) -> None:
         self._engine = engine
         self._settings = settings
+        self._rag_services = rag_services
 
     async def liveness(self) -> LivenessResponse:
         return LivenessResponse(version=self._settings.version)
 
     async def readiness(self) -> ReadinessResponse:
-        components: dict[str, ComponentHealth] = {}
+        components: dict[str, ComponentHealth] = {"database": await self._check_database()}
 
-        checks: list[tuple[str, asyncio.Task[ComponentHealth]]] = [
-            ("database", asyncio.create_task(self._check_database()))
-        ]
-        if self._settings.qdrant_url:
-            checks.append(("vector_store", asyncio.create_task(self._check_qdrant())))
+        if self._rag_services is not None:
+            components.update(await self._rag_services.health())
+        elif self._settings.qdrant_url:
+            components["vector_store"] = await self._check_qdrant()
         else:
             components["vector_store"] = ComponentHealth(status="disabled")
-
-        results = await asyncio.gather(*(task for _, task in checks), return_exceptions=True)
-        for (name, _), result in zip(checks, results, strict=True):
-            if isinstance(result, BaseException):
-                logger.warning(
-                    "health_component_exception",
-                    extra={"context": {"component": name, "error": type(result).__name__}},
-                )
-                components[name] = ComponentHealth(status="error")
-            else:
-                components[name] = result
 
         healthy = all(component.status in {"ok", "disabled"} for component in components.values())
         return ReadinessResponse(

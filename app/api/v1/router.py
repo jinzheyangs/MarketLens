@@ -9,7 +9,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Security
 
-from app.api.v1 import audit, me, organizations, projects, users, workspaces
+from app.api.v1 import (
+    audit,
+    documents,
+    me,
+    organizations,
+    projects,
+    users,
+    workspaces,
+)
 from app.auth.dependencies import bearer_scheme, get_principal
 
 router = APIRouter(
@@ -21,4 +29,5 @@ router.include_router(users.router)
 router.include_router(organizations.router)
 router.include_router(workspaces.router)
 router.include_router(projects.router)
+router.include_router(documents.router)
 router.include_router(audit.router)

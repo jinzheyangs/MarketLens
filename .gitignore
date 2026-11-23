@@ -23,6 +23,7 @@ coverage.xml
 htmlcov/
 
 # Local data / editor files
+.data/
 *.log
 .DS_Store
 Thumbs.db

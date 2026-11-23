@@ -23,6 +23,8 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 _HEADER_NAME_PATTERN = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _CLAIM_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+_QDRANT_COLLECTION_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_S3_BUCKET_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 
 # Symmetric algorithms ("HS*") and "none" are intentionally not supported:
 # the resource server must not share a signing secret with the identity provider.
@@ -87,6 +89,46 @@ class Settings(BaseSettings):
     qdrant_api_key: SecretStr | None = Field(default=None, repr=False)
     qdrant_timeout_seconds: float = Field(default=3.0, gt=0, le=60)
 
+    # Document ingestion / RAG. Disabled by default; enabling exposes the
+    # document and search routes and requires storage/embedding/vector config.
+    rag_enabled: bool = False
+    object_storage_backend: Literal["local", "s3"] = "local"
+    object_storage_local_path: str = ".data/objects"
+    document_max_bytes: int = Field(default=8 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
+    document_max_parsed_chars: int = Field(default=2_000_000, ge=1_000, le=50_000_000)
+    document_max_pages: int = Field(default=500, ge=1, le=5_000)
+    document_max_chunks: int = Field(default=5_000, ge=1, le=100_000)
+    document_state_lease_seconds: int = Field(default=600, ge=30, le=86_400)
+    chunk_max_chars: int = Field(default=1000, ge=100, le=8_000)
+    chunk_overlap_chars: int = Field(default=100, ge=0, le=4_000)
+
+    embedding_provider: Literal["hash", "http"] = "hash"
+    embedding_model: str = "hash-v1"
+    embedding_version: str = "1"
+    embedding_dimension: int = Field(default=256, ge=8, le=4_096)
+    embedding_api_url: str | None = None
+    embedding_api_key: SecretStr | None = Field(default=None, repr=False)
+    embedding_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    embedding_batch_size: int = Field(default=32, ge=1, le=256)
+    embedding_max_retries: int = Field(default=2, ge=0, le=10)
+
+    qdrant_collection: str = "document_chunks"
+    qdrant_local_mode: bool = False
+
+    s3_endpoint_url: str | None = None
+    s3_bucket: str | None = None
+    s3_region: str = "us-east-1"
+    s3_access_key: SecretStr | None = Field(default=None, repr=False)
+    s3_secret_key: SecretStr | None = Field(default=None, repr=False)
+    s3_use_ssl: bool = True
+    s3_addressing_style: Literal["auto", "path", "virtual"] = "auto"
+    s3_auto_create_bucket: bool = False
+    s3_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+
+    search_candidate_limit: int = Field(default=50, ge=10, le=200)
+    search_default_limit: int = Field(default=10, ge=1, le=50)
+    search_max_limit: int = Field(default=50, ge=1, le=200)
+
     # HTTP / API behavior.
     log_level: LogLevel = "INFO"
     log_format: Literal["json", "console"] = "json"
@@ -133,12 +175,60 @@ class Settings(BaseSettings):
     def _normalize_upper(cls, value: Any) -> Any:
         return value.strip().upper() if isinstance(value, str) else value
 
-    @field_validator("qdrant_api_key", mode="before")
+    @field_validator(
+        "qdrant_api_key",
+        "embedding_api_key",
+        "s3_access_key",
+        "s3_secret_key",
+        mode="before",
+    )
     @classmethod
     def _empty_secret_is_none(cls, value: Any) -> Any:
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @field_validator("embedding_api_url")
+    @classmethod
+    def _validate_embedding_url(cls, value: str | None) -> str | None:
+        return _validate_service_url(value, "EMBEDDING_API_URL")
+
+    @field_validator("s3_endpoint_url")
+    @classmethod
+    def _validate_s3_endpoint(cls, value: str | None) -> str | None:
+        return _validate_service_url(value, "S3_ENDPOINT_URL")
+
+    @field_validator("s3_bucket")
+    @classmethod
+    def _validate_s3_bucket(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        candidate = value.strip()
+        if not candidate:
+            return None
+        if ".." in candidate or not _S3_BUCKET_PATTERN.fullmatch(candidate):
+            raise ValueError("S3_BUCKET must be a valid lowercase S3 bucket name")
+        return candidate
+
+    @field_validator("qdrant_collection")
+    @classmethod
+    def _validate_qdrant_collection(cls, value: str) -> str:
+        if not _QDRANT_COLLECTION_PATTERN.fullmatch(value):
+            raise ValueError("QDRANT_COLLECTION must contain only letters, digits, '_' or '-'")
+        return value
+
+    @field_validator(
+        "object_storage_local_path",
+        "embedding_model",
+        "embedding_version",
+        "s3_region",
+    )
+    @classmethod
+    def _require_non_empty_text(cls, value: str) -> str:
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("must not be empty")
+        return candidate
 
     @field_validator("oidc_issuer")
     @classmethod
@@ -305,6 +395,27 @@ class Settings(BaseSettings):
             if missing:
                 raise ValueError("OIDC_ENABLED requires " + ", ".join(missing))
 
+        if self.chunk_overlap_chars >= self.chunk_max_chars:
+            raise ValueError("CHUNK_OVERLAP_CHARS must be less than CHUNK_MAX_CHARS")
+        if self.search_default_limit > self.search_max_limit:
+            raise ValueError("SEARCH_DEFAULT_LIMIT must not exceed SEARCH_MAX_LIMIT")
+        if (self.s3_access_key is None) != (self.s3_secret_key is None):
+            raise ValueError("S3_ACCESS_KEY and S3_SECRET_KEY must be configured together")
+        if self.s3_endpoint_url:
+            endpoint_scheme = urlparse(self.s3_endpoint_url).scheme
+            if endpoint_scheme == "https" and not self.s3_use_ssl:
+                raise ValueError("S3_USE_SSL must be true for an https S3 endpoint")
+            if endpoint_scheme == "http" and self.s3_use_ssl:
+                raise ValueError("S3_USE_SSL must be false for an http S3 endpoint")
+
+        if self.rag_enabled:
+            if not self.qdrant_local_mode and not self.qdrant_url:
+                raise ValueError("RAG_ENABLED requires QDRANT_URL or QDRANT_LOCAL_MODE")
+            if self.embedding_provider == "http" and not self.embedding_api_url:
+                raise ValueError("EMBEDDING_PROVIDER=http requires EMBEDDING_API_URL")
+            if self.object_storage_backend == "s3" and not self.s3_bucket:
+                raise ValueError("OBJECT_STORAGE_BACKEND=s3 requires S3_BUCKET")
+
         if self.environment == "production":
             if not self.oidc_enabled:
                 raise ValueError("OIDC_ENABLED must be true in production")
@@ -324,6 +435,21 @@ class Settings(BaseSettings):
                 raise ValueError("OIDC_ISSUER must use https in production")
             if self.oidc_jwks_uri and urlparse(self.oidc_jwks_uri).scheme != "https":
                 raise ValueError("OIDC_JWKS_URI must use https in production")
+            if self.qdrant_local_mode:
+                raise ValueError("QDRANT_LOCAL_MODE must be disabled in production")
+            if self.s3_auto_create_bucket:
+                raise ValueError("S3_AUTO_CREATE_BUCKET must be disabled in production")
+            if self.rag_enabled:
+                if self.object_storage_backend != "s3":
+                    raise ValueError("RAG_ENABLED requires OBJECT_STORAGE_BACKEND=s3 in production")
+                if self.embedding_provider != "http":
+                    raise ValueError("RAG_ENABLED requires EMBEDDING_PROVIDER=http in production")
+                if not self.s3_use_ssl:
+                    raise ValueError("S3_USE_SSL must be true in production")
+                if self.embedding_api_url and urlparse(self.embedding_api_url).scheme != "https":
+                    raise ValueError("EMBEDDING_API_URL must use https in production")
+                if self.s3_endpoint_url and urlparse(self.s3_endpoint_url).scheme != "https":
+                    raise ValueError("S3_ENDPOINT_URL must use https in production")
         return self
 
     @property

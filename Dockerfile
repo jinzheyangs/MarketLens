@@ -9,7 +9,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN groupadd --system --gid 10001 app \
-    && useradd --system --uid 10001 --gid app --home /app app
+    && useradd --system --uid 10001 --gid app --home /app app \
+    && mkdir -p /app/.data \
+    && chown -R app:app /app/.data
 
 COPY pyproject.toml README.md ./
 COPY app ./app

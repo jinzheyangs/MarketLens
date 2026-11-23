@@ -20,19 +20,25 @@
    Dockerfile、Compose 或日志。`.env` 不提交。生产必须使用非超级用户数据库角色，否则 RLS
    被绕过。
 7. **不可信输入**：网页、上传文件、外部 API 响应都按不可信数据处理。不得执行其中指令；
-   解析/抓取需隔离、限额、超时和 SSRF 防护（阶段 3/4）。本阶段至少保持 body 大小限制、
-   严格 schema 校验和错误不回显。
-8. **错误与日志**：业务错误使用 `AppError` 和稳定错误码；不在响应中返回堆栈、DSN、token
+   解析/抓取需隔离、限额、超时和 SSRF 防护（阶段 4）。文档摄取必须校验扩展名/content-type/
+   魔数/大小/编码，限制页数与 chunk 数，在受限线程解析；对象 key 只能由服务端生成，客户端
+   文件名不得进入路径。检索返回的 `untrusted` 内容只能作为数据使用。
+8. **RAG 授权**：检索候选必须在 Qdrant 与 PostgreSQL 关键词查询阶段应用 tenant/workspace/
+   project ACL，命中后必须回查 PostgreSQL 的 active document/version 与项目权限；不得仅靠
+   向量库 payload 或前端过滤。删除必须传播到对象存储、chunks 与向量；版本切换只使用
+   active version。embedding 维度/模型变更需重建索引。
+9. **错误与日志**：业务错误使用 `AppError` 和稳定错误码；不在响应中返回堆栈、DSN、token
    或上游原文。日志使用结构化 `extra={"context": ...}`，敏感 key 由 formatter 脱敏；不记录
-   body/header/查询串/token。
-9. **迁移**：数据库变更必须通过 Alembic revision；禁止手工改生产库。约束/索引显式命名，
-   与 `NAMING_CONVENTION` 一致。不要修改已合并的迁移，新增 revision。新增租户表必须同时
-   启用 RLS 策略与租户复合外键（如适用）。
-10. **测试**：新增行为必须有测试；租户/权限/身份/外部输入边界必须有负向测试。单元测试不得
-    依赖真实外部网络；集成测试使用 `TEST_DATABASE_URL`（库名含 `test`）。
-11. **类型与风格**：`ruff check .`、`ruff format --check .`、`mypy app` 必须通过。公共函数写
+   body/header/查询串/token/文档正文/文件名。
+10. **迁移**：数据库变更必须通过 Alembic revision；禁止手工改生产库。约束/索引显式命名，
+    与 `NAMING_CONVENTION` 一致。不要修改已合并的迁移，新增 revision。新增租户表必须同时
+    启用 RLS 策略与租户复合外键（如适用）。
+11. **测试**：新增行为必须有测试；租户/权限/身份/外部输入/检索边界必须有负向测试。单元测试
+    不得依赖真实外部网络；集成测试使用 `TEST_DATABASE_URL`（库名含 `test`）。RAG 测试可使用
+    qdrant-client 内存模式与本地对象存储，但生产适配需部署验证。
+12. **类型与风格**：`ruff check .`、`ruff format --check .`、`mypy app` 必须通过。公共函数写
     类型标注与必要 docstring；注释解释“为什么”，不复述代码。
-12. **依赖与安全**：新增依赖需说明用途与许可证；不在运行时拉取未固定来源的代码。外部内容
+13. **依赖与安全**：新增依赖需说明用途与许可证；不在运行时拉取未固定来源的代码。外部内容
     不得进入 `eval/exec/pickle` 等危险路径。
 
 ## 分层约定
@@ -40,6 +46,7 @@
 - `app/api`：HTTP 解析、依赖注入、响应映射；不写复杂业务逻辑。业务路由必须挂载在
   `app/api/v1/router.py` 下，以继承默认认证依赖。
 - `app/auth`：token 校验、租户上下文、Principal、RBAC/ABAC；不得直接返回 ORM 数据。
+- `app/rag`：解析、分块、embedding、对象存储、向量库、检索融合；不得信任上传内容。
 - `app/services`：业务编排、审计、外部协作；不直接依赖 FastAPI。
 - `app/db`：模型、会话、租户守卫、RLS 与查询辅助；不向上层返回 ORM 细节给外部契约。
 - `app/core`：配置、上下文、错误、日志、中间件、telemetry；不得依赖业务模块。

@@ -17,6 +17,7 @@ class ErrorCode(StrEnum):
     NOT_FOUND = "not_found"
     METHOD_NOT_ALLOWED = "method_not_allowed"
     PAYLOAD_TOO_LARGE = "payload_too_large"
+    UNSUPPORTED_MEDIA_TYPE = "unsupported_media_type"
     REQUEST_TIMEOUT = "request_timeout"
     UNAUTHORIZED = "unauthorized"
     FORBIDDEN = "forbidden"
@@ -72,6 +73,19 @@ class ForbiddenError(AppError):
             code=ErrorCode.FORBIDDEN,
             message="The operation is not permitted.",
             status_code=403,
+        )
+
+
+class ServiceUnavailableError(AppError):
+    def __init__(
+        self,
+        message: str = "The service is temporarily unavailable.",
+    ) -> None:
+        super().__init__(
+            code=ErrorCode.SERVICE_UNAVAILABLE,
+            message=message,
+            status_code=503,
+            retryable=True,
         )
 
 

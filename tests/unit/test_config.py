@@ -203,5 +203,90 @@ def test_api_prefix_validation() -> None:
         make_settings(api_prefix="/api/v1/")
 
 
+def test_rag_configuration_validation() -> None:
+    valid = make_settings(
+        rag_enabled=True,
+        qdrant_local_mode=True,
+        embedding_provider="hash",
+        embedding_dimension=8,
+        object_storage_backend="local",
+    )
+    assert valid.rag_enabled is True
+
+    with pytest.raises(ValidationError):
+        make_settings(rag_enabled=True, qdrant_local_mode=False, qdrant_url=None)
+    with pytest.raises(ValidationError):
+        make_settings(
+            rag_enabled=True,
+            qdrant_local_mode=True,
+            embedding_provider="http",
+            embedding_api_url=None,
+        )
+    with pytest.raises(ValidationError):
+        make_settings(
+            rag_enabled=True,
+            qdrant_local_mode=True,
+            object_storage_backend="s3",
+            s3_bucket=None,
+        )
+    with pytest.raises(ValidationError):
+        make_settings(chunk_max_chars=100, chunk_overlap_chars=100)
+
+
+def test_production_rag_requires_hardened_backends() -> None:
+    with pytest.raises(ValidationError):
+        make_production_settings(rag_enabled=True)
+
+    production = make_production_settings(
+        rag_enabled=True,
+        qdrant_url="https://qdrant.example.com",
+        object_storage_backend="s3",
+        s3_bucket="marketlens-documents",
+        s3_use_ssl=True,
+        embedding_provider="http",
+        embedding_api_url="https://embeddings.example.com/v1/embeddings",
+    )
+    assert production.rag_enabled is True
+
+    with pytest.raises(ValidationError):
+        make_production_settings(
+            rag_enabled=True,
+            qdrant_local_mode=True,
+            object_storage_backend="s3",
+            s3_bucket="marketlens-documents",
+            embedding_provider="http",
+            embedding_api_url="https://embeddings.example.com/v1/embeddings",
+        )
+    with pytest.raises(ValidationError):
+        make_production_settings(
+            rag_enabled=True,
+            qdrant_url="https://qdrant.example.com",
+            object_storage_backend="s3",
+            s3_bucket="marketlens-documents",
+            embedding_provider="hash",
+        )
+
+
+def test_s3_configuration_consistency() -> None:
+    with pytest.raises(ValidationError):
+        make_settings(s3_access_key="key")
+    with pytest.raises(ValidationError):
+        make_settings(
+            s3_endpoint_url="https://minio.example.com",
+            s3_use_ssl=False,
+        )
+    with pytest.raises(ValidationError):
+        make_settings(
+            s3_endpoint_url="http://minio.example.com",
+            s3_use_ssl=True,
+        )
+    settings = make_settings(
+        s3_endpoint_url="http://minio.example.com",
+        s3_use_ssl=False,
+        s3_bucket="marketlens-documents",
+    )
+    assert settings.s3_bucket == "marketlens-documents"
+
+
 def test_default_database_url_is_test_scoped() -> None:
     assert "test" in DEFAULT_TEST_DATABASE_URL

@@ -63,6 +63,8 @@ class ResourceType(StrEnum):
     WORKSPACE = "workspace"
     PROJECT = "project"
     MEMBERSHIP = "membership"
+    DOCUMENT = "document"
+    DOCUMENT_VERSION = "document_version"
 
 
 class Permission(StrEnum):
@@ -100,4 +102,9 @@ class AuditAction(StrEnum):
     PROJECT_UPDATED = "project.updated"
     MEMBERSHIP_GRANTED = "membership.granted"
     MEMBERSHIP_REVOKED = "membership.revoked"
+    DOCUMENT_UPLOADED = "document.uploaded"
+    DOCUMENT_INDEXED = "document.indexed"
+    DOCUMENT_INDEX_FAILED = "document.index_failed"
+    DOCUMENT_DELETED = "document.deleted"
+    DOCUMENT_DELETE_FAILED = "document.delete_failed"
     AUTHORIZATION_DENIED = "authorization.denied"

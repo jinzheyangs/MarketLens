@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from sqlalchemy import select
@@ -46,6 +46,7 @@ class Principal:
     organization_ids: frozenset[UUID]
     workspace_ids: frozenset[UUID]
     project_ids: frozenset[UUID]
+    project_workspace_ids: dict[UUID, UUID] = field(default_factory=dict)
 
     @property
     def is_tenant_admin(self) -> bool:
@@ -89,6 +90,7 @@ async def resolve_principal(session: AsyncSession, claims: TokenClaims) -> Princ
     organization_ids: set[UUID] = set()
     workspace_ids: set[UUID] = set()
     project_ids: set[UUID] = set()
+    project_workspace_ids: dict[UUID, UUID] = {}
 
     org_rows = await session.scalars(
         select(OrganizationMembership).where(
@@ -134,6 +136,7 @@ async def resolve_principal(session: AsyncSession, claims: TokenClaims) -> Princ
         role = ScopeRole(membership.role)
         project_roles[membership.project_id] = role
         project_ids.add(membership.project_id)
+        project_workspace_ids[membership.project_id] = workspace_id
         workspace_ids.add(workspace_id)
         organization_ids.add(organization_id)
 
@@ -154,4 +157,5 @@ async def resolve_principal(session: AsyncSession, claims: TokenClaims) -> Princ
         organization_ids=frozenset(organization_ids),
         workspace_ids=frozenset(workspace_ids),
         project_ids=frozenset(project_ids),
+        project_workspace_ids=project_workspace_ids,
     )
