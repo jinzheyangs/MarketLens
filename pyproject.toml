@@ -1,0 +1,96 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "market-intel-backend"
+version = "0.1.0"
+description = "Enterprise multi-role market research agent backend"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+authors = [{ name = "Market Intelligence Platform" }]
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "uvicorn[standard]>=0.32,<1.0",
+    "pydantic>=2.9,<3.0",
+    "pydantic-settings>=2.6,<3.0",
+    "sqlalchemy[asyncio]>=2.0.36,<2.1",
+    "asyncpg>=0.30,<1.0",
+    "alembic>=1.14,<2.0",
+    "httpx>=0.27,<1.0",
+    "opentelemetry-api>=1.28,<2.0",
+    "opentelemetry-sdk>=1.28,<2.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.28,<2.0",
+    "opentelemetry-instrumentation-fastapi>=0.49b0,<1.0",
+    "opentelemetry-instrumentation-httpx>=0.49b0,<1.0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.49b0,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<9.0",
+    "pytest-asyncio>=0.24,<2.0",
+    "pytest-cov>=6.0,<8.0",
+    "asgi-lifespan>=2.1,<3.0",
+    "python-dotenv>=1.0,<2.0",
+    "ruff>=0.8,<1.0",
+    "mypy>=1.13,<2.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["app", "tests"]
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S", "C4", "SIM", "RUF"]
+ignore = [
+    # FastAPI dependency patterns commonly use function calls in defaults; not used yet.
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+"tests/conftest.py" = ["E402"]
+"alembic/env.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+known-third-party = ["alembic", "asgi_lifespan", "asyncpg", "fastapi", "httpx", "pydantic", "sqlalchemy"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+warn_unused_configs = true
+plugins = ["pydantic.mypy"]
+exclude = ["alembic/versions/"]
+
+[[tool.mypy.overrides]]
+module = [
+    "opentelemetry.instrumentation.*",
+    "opentelemetry.exporter.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "integration: requires a reachable PostgreSQL test database",
+]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/main.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+# Windows-native scripts should keep CRLF when checked out on Windows.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Ensure container-mounted shell scripts and Dockerfile are LF on every platform.
+*.sh text eol=lf
+Dockerfile text eol=lf
