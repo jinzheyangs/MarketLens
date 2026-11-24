@@ -736,6 +736,7 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
 - [监测、通知、协作与配额说明](docs/monitoring-and-collaboration.md)
 - [生产运营手册](docs/operations-runbook.md)
 - [真实依赖联调](docs/real-integration.md)
+- [未完成事项与生产验收清单](docs/remaining-work.md)
 - [部署资产说明](deploy/README.md)
 
 ## 已知限制（跨阶段）
