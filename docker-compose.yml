@@ -262,6 +262,26 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  ops-metrics:
+    image: market-intel-api:local
+    build:
+      context: .
+      target: runtime
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-market_intel}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-market_intel}
+      OPS_METRICS_PORT: "9101"
+    command: ["python", "-m", "app.ops.metrics_exporter"]
+    ports:
+      - "127.0.0.1:9101:9101"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   qdrant_data:

@@ -14,6 +14,8 @@ never tenant/user IDs or raw URLs.
 | `marketlens_http_requests_in_progress` | gauge | saturation / shutdown leaks |
 | `marketlens_http_server_errors_total{method,route}` | counter | 5xx attribution |
 | `marketlens_app_info{service,version,environment}` | gauge | deployment tracking |
+| `marketlens_queue_*` | gauge | aggregate backlog from `app.ops.metrics_exporter` (no tenant labels) |
+| `marketlens_queue_last_success_timestamp_seconds` | gauge | exporter freshness |
 
 The Helm chart includes a `ServiceMonitor` that authenticates with the metrics
 bearer token.
@@ -50,9 +52,12 @@ migration Jobs. `grafana-dashboard.json` visualizes the same signals.
 
 ## Gaps
 
-- Workers do not expose their own `/metrics` endpoint; worker health is inferred
-  from Kubernetes Deployment status and logs. Add per-worker metrics before
-  relying on queue-depth SLOs.
+- `app.ops.metrics_exporter` exposes aggregate queue depth without tenant labels.
+  Individual workers still do not expose lease/QPS/heartbeat metrics; worker
+  liveness relies on Kubernetes Deployment status and logs.
+- The exporter uses the application database role and iterates active tenants. For
+  very large tenant counts, shard the exporter or add a materialized operations
+  summary table rather than increasing the scan interval.
 - Dashboard/rules were not executed against a live Prometheus/Thanos stack in
   this repository. Validate them in a staging observability stack.
 - SLO targets and error-budget policy require product/operations sign-off.

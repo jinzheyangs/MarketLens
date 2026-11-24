@@ -76,8 +76,11 @@ helm rollback marketlens <revision> -n marketlens --wait --timeout 10m
 ## 5. 故障处理
 
 租户管理员可通过 `GET /api/v1/operations/queues` 获取当前租户的研究、采集、审查、
-导出、监测、通知、审批、outbox 和 consumer failure 积压数量。该接口需要管理员
-权限，不能替代 Prometheus；worker 指标缺口见 `deploy/observability/README.md`。
+导出、监测、通知、审批、outbox 和 consumer failure 积压数量。全局积压指标由独立
+`python -m app.ops.metrics_exporter` 进程汇总（`marketlens_queue_*`，无 tenant 标签），
+Prometheus 规则包含 exporter 过期、outbox/consumer dead letter 和 backlog 告警。
+exporter 的 9101 端口必须只允许 monitoring namespace 访问。该 exporter 只提供聚合
+队列深度，不提供单 worker lease/QPS 指标。
 
 ### API 5xx / 可用性下降
 

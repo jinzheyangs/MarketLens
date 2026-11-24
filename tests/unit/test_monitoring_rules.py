@@ -90,3 +90,12 @@ def test_webhook_http_requires_explicit_development_opt_in() -> None:
     )
     safe = client.validate_target("http://internal.example.com/hook")
     assert safe.scheme == "http"
+
+
+def test_slack_text_escapes_mentions_and_links() -> None:
+    from app.monitoring.worker import _slack_escape
+
+    escaped = _slack_escape("<!channel> see <https://evil.example|click> & more")
+    assert "<" not in escaped
+    assert ">" not in escaped
+    assert "&amp;" in escaped

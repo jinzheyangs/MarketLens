@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -31,6 +32,7 @@ from app.db.models import (
 from app.factory import create_app
 from app.monitoring.crypto import ChannelSecretCipher
 from app.monitoring.service import MonitoringServices
+from app.monitoring.webhook import WebhookResult
 from app.monitoring.worker import MonitoringWorker
 from app.ops.notification_keys import rotate_notification_keys
 from tests.conftest import make_settings, open_client
@@ -77,6 +79,22 @@ async def monitoring_client(
     )
     async with open_client(application) as client:
         yield client, seed, application, settings
+
+
+class RecordingWebhook:
+    def __init__(self) -> None:
+        self.bodies: list[bytes] = []
+
+    async def post_json(
+        self,
+        *,
+        url: str,
+        body: bytes,
+        headers: dict[str, str],
+    ) -> WebhookResult:
+        del url, headers
+        self.bodies.append(body)
+        return WebhookResult(status_code=200)
 
 
 async def _channel(
@@ -175,6 +193,19 @@ async def test_monitoring_channel_and_subscription_lifecycle(
         json={"url": "https://hooks.example.test/not-allowed"},
     )
     assert invalid_log_update.status_code == 400
+
+    slack_channel = await client.post(
+        f"/api/v1/workspaces/{seed.workspace_a}/notification-channels",
+        headers=_auth(seed.tokens["workspace_admin_a"]),
+        json={
+            "name": "ops-slack",
+            "kind": "slack",
+            "url": "https://hooks.slack.com/services/test",
+        },
+    )
+    assert slack_channel.status_code == 201, slack_channel.text
+    assert slack_channel.json()["kind"] == "slack"
+    assert "url" not in slack_channel.json()
 
     forbidden_channel = await client.post(
         f"/api/v1/workspaces/{seed.workspace_a}/notification-channels",
@@ -498,6 +529,8 @@ async def test_monitoring_worker_detects_change_and_delivers(
     _client, seed, application, settings = monitoring_client
     services = application.state.monitoring_services
     assert isinstance(services, MonitoringServices)
+    recording_webhook = RecordingWebhook()
+    services.webhook = recording_webhook  # type: ignore[assignment]
 
     now = datetime.now(UTC)
     subscription_id = uuid4()
@@ -515,9 +548,11 @@ async def test_monitoring_worker_detects_change_and_delivers(
                     id=channel_id,
                     tenant_id=seed.tenant_a,
                     workspace_id=seed.workspace_a,
-                    name="worker-log-channel",
-                    kind="log",
-                    encrypted_config=None,
+                    name="worker-slack-channel",
+                    kind="slack",
+                    encrypted_config=ChannelSecretCipher(settings).encrypt(
+                        {"url": "https://hooks.example.test/slack"}
+                    ),
                     enabled=True,
                     created_by=seed.user_ids["workspace_admin_a"],
                 )
@@ -649,6 +684,12 @@ async def test_monitoring_worker_detects_change_and_delivers(
             assert "signing_secret" not in delivery.payload
             assert delivery.payload["untrusted"] is True
             assert delivery.payload["source_url"] == url
+
+    assert len(recording_webhook.bodies) == 1
+    slack_body = json.loads(recording_webhook.bodies[0])
+    assert "text" in slack_body
+    assert url in slack_body["text"]
+    assert "signing_secret" not in slack_body
 
 
 async def test_notification_key_rotation_rewrites_channel_secrets(

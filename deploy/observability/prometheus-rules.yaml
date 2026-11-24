@@ -79,6 +79,50 @@ groups:
           description: Deployment {{ $labels.deployment }} has {{ $value }} unavailable replicas.
           runbook_url: docs/operations-runbook.md
 
+      - alert: MarketLensQueueExporterStale
+        expr: absent(marketlens_queue_last_success_timestamp_seconds) or (time() - marketlens_queue_last_success_timestamp_seconds > 300)
+        for: 5m
+        labels:
+          severity: warning
+          service: marketlens-ops-metrics
+        annotations:
+          summary: Aggregate queue metrics have not refreshed for 5 minutes.
+          description: Check the ops-metrics Deployment, database connectivity, and RLS role.
+          runbook_url: docs/operations-runbook.md
+
+      - alert: MarketLensOutboxDeadLetters
+        expr: marketlens_queue_outbox_failed > 0
+        for: 10m
+        labels:
+          severity: critical
+          service: marketlens-events
+        annotations:
+          summary: Domain events are in the outbox failed state.
+          description: Inspect outbox/Kafka connectivity and replay after root cause is fixed.
+          runbook_url: docs/operations-runbook.md
+
+      - alert: MarketLensConsumerDeadLetters
+        expr: marketlens_queue_consumer_failures_dead_letter > 0
+        for: 10m
+        labels:
+          severity: critical
+          service: marketlens-events
+        annotations:
+          summary: Consumer failures reached dead-letter state.
+          description: Inspect event_consumer_failures and decide whether to replay or fix the handler.
+          runbook_url: docs/operations-runbook.md
+
+      - alert: MarketLensQueueBacklogHigh
+        expr: marketlens_queue_pending_collection_tasks + marketlens_queue_pending_notification_deliveries > 10000
+        for: 20m
+        labels:
+          severity: warning
+          service: marketlens-workers
+        annotations:
+          summary: Collection or notification backlog exceeds 10,000 items.
+          description: Scale the relevant worker or investigate upstream dependency latency.
+          runbook_url: docs/operations-runbook.md
+
       - alert: MarketLensMigrationJobFailed
         expr: |
           kube_job_status_failed{namespace="marketlens", job_name=~"marketlens-.*-migrate-.*"} > 0

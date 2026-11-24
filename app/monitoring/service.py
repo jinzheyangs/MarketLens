@@ -94,7 +94,7 @@ async def create_notification_channel(
     signing_secret: str | None,
 ) -> NotificationChannel:
     encrypted: str | None = None
-    if kind is NotificationChannelKind.WEBHOOK:
+    if kind in (NotificationChannelKind.WEBHOOK, NotificationChannelKind.SLACK):
         if not url:
             raise BadRequestError("webhook URL is required")
         webhook.validate_target(url)
@@ -151,7 +151,7 @@ async def update_notification_channel(
         raise BadRequestError("channel name is invalid")
 
     config_changed = False
-    if kind is NotificationChannelKind.WEBHOOK:
+    if kind in (NotificationChannelKind.WEBHOOK, NotificationChannelKind.SLACK):
         needs_config = url is not None or signing_secret is not None or clear_signing_secret
         if needs_config:
             if channel.encrypted_config is None:

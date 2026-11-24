@@ -131,6 +131,24 @@ workers:
         cpu: "1"
         memory: 1Gi
 
+# Aggregate queue-depth exporter. It has no tenant labels and must only be
+# reachable from the monitoring namespace.
+opsMetrics:
+  enabled: false
+  replicaCount: 1
+  port: 9101
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+
 migration:
   enabled: true
   backoffLimit: 3

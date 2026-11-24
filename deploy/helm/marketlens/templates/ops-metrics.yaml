@@ -1,0 +1,92 @@
+{{- if .Values.opsMetrics.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "marketlens.fullname" . }}-ops-metrics
+  labels:
+    {{- include "marketlens.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ops-metrics
+spec:
+  replicas: {{ .Values.opsMetrics.replicaCount }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "marketlens.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ops-metrics
+  template:
+    metadata:
+      labels:
+        {{- include "marketlens.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: ops-metrics
+    spec:
+      serviceAccountName: {{ include "marketlens.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "marketlens.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: ops-metrics
+          image: {{ include "marketlens.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "app.ops.metrics_exporter"]
+          securityContext:
+            {{- include "marketlens.securityContext" . | nindent 12 }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.opsMetrics.port }}
+              protocol: TCP
+          env:
+            {{- include "marketlens.env" . | nindent 12 }}
+            - name: OPS_METRICS_PORT
+              value: {{ .Values.opsMetrics.port | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.existingSecret }}
+          resources:
+            {{- toYaml .Values.opsMetrics.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "marketlens.fullname" . }}-ops-metrics
+  labels:
+    {{- include "marketlens.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ops-metrics
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "marketlens.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: ops-metrics
+  ports:
+    - name: metrics
+      port: {{ .Values.opsMetrics.port }}
+      targetPort: metrics
+      protocol: TCP
+{{- if .Values.opsMetrics.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "marketlens.fullname" . }}-ops-metrics
+  labels:
+    {{- include "marketlens.labels" . | nindent 4 }}
+    {{- with .Values.opsMetrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "marketlens.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ops-metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.opsMetrics.serviceMonitor.interval }}
+      scheme: http
+{{- end }}
+{{- end }}

@@ -163,6 +163,10 @@ curl -H "Authorization: Bearer <jwt>" \
 # 运维数据保留：默认 dry-run；执行需显式开启
 python -m app.ops.retention
 RETENTION_DESTRUCTIVE_ENABLED=true python -m app.ops.retention --execute
+
+# 全局队列深度 exporter（Prometheus 9101，默认只输出聚合值）
+python -m app.ops.metrics_exporter --once
+python -m app.ops.metrics_exporter
 ```
 
 完整发布、回滚、备份恢复、故障演练和 SLO 说明见
@@ -730,7 +734,7 @@ RPO/RTO 均不声称已验证。
 - 监测调度使用 PostgreSQL 轮询队列，不是 Temporal Schedule；大规模订阅需要分片或
   专用调度服务。
 - 变更检测只比较来源 URL 与快照内容哈希，不做 HTML 语义 diff、价格/实体抽取。
-- 通知适配器只有 webhook/log；邮件、企业微信、Slack 等需要新增受控 egress 实现。
+- 通知适配器实现 webhook/Slack/log；邮件、企业微信等需要新增受控 egress 实现。
 - 通知投递为 at-least-once，接收方必须按 delivery ID 去重；没有端到端 exactly-once。
 - 渠道支持 PATCH 更新 URL/签名密钥，并支持一把 previous key 的在线轮换
   (`python -m app.ops.notification_keys`)；仍无 KMS 信封加密/密钥版本表。
@@ -749,7 +753,8 @@ RPO/RTO 均不声称已验证。
   切换/PITR、Kafka/Temporal/Qdrant 故障演练或 k6 压测；RPO/RTO、容量和 SLO 均未实测。
 - Terraform 只覆盖 RDS/S3/KMS/Secrets Manager；VPC、EKS、MSK、Temporal、Qdrant、
   DNS/TLS、IAM/IRSA 需部署方提供。
-- `/metrics` 只覆盖 API HTTP 指标；worker 队列/租约/积压指标未暴露，worker 告警依赖
+- API `/metrics` 覆盖 HTTP 指标；独立 `app.ops.metrics_exporter` 汇总全局队列深度
+  (`marketlens_queue_*`)，但没有单 worker lease/QPS/心跳指标，worker 存活仍依赖
   Kubernetes Deployment 状态。
 - Prometheus 规则和 Grafana 看板未在真实 Prometheus/Thanos/Grafana 栈中执行。
 - 保留任务只清理运维事件表；业务数据归档、法务保留、客户删除流程仍是人工治理。

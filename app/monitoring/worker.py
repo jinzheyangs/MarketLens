@@ -83,6 +83,11 @@ def _delivery_key(channel_id: UUID, change_id: UUID) -> str:
     return hashlib.sha256(f"{channel_id}:{change_id}".encode()).hexdigest()
 
 
+def _slack_escape(value: str) -> str:
+    """Escape Slack control characters so untrusted titles cannot mention/ping."""
+    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 class MonitoringWorker:
     def __init__(
         self,
@@ -842,7 +847,10 @@ class MonitoringWorker:
                     )
                     return
                 config: dict[str, str] = {}
-                if channel.kind == NotificationChannelKind.WEBHOOK.value:
+                if channel.kind in (
+                    NotificationChannelKind.WEBHOOK.value,
+                    NotificationChannelKind.SLACK.value,
+                ):
                     try:
                         config = ChannelSecretCipher(self._settings).decrypt(
                             channel.encrypted_config or ""
@@ -856,12 +864,26 @@ class MonitoringWorker:
                         )
                         return
                 payload = delivery.payload
-                body = json.dumps(
-                    payload,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                    sort_keys=True,
-                ).encode("utf-8")
+                if channel.kind == NotificationChannelKind.SLACK.value:
+                    text_parts = [
+                        f"[{str(payload.get('severity', 'info')).upper()}] "
+                        f"{_slack_escape(str(payload.get('summary', '')))}"
+                    ]
+                    if payload.get("source_url"):
+                        text_parts.append(_slack_escape(str(payload["source_url"])))
+                    body = json.dumps(
+                        {"text": "\n".join(text_parts)[:3_000]},
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ).encode("utf-8")
+                else:
+                    body = json.dumps(
+                        payload,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ).encode("utf-8")
                 if len(body) > self._settings.notification_max_payload_bytes:
                     await self._finish_delivery(
                         delivery_id,

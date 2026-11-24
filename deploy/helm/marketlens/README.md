@@ -32,6 +32,8 @@ Prefer External Secrets/CSI over `kubectl create secret` for production.
 - `workers.*.enabled/replicaCount/resources`
 - `networkPolicy.privateNetworks`, `publicEgress.except`, `additionalIngress`
 - `serviceMonitor.enabled` and the metrics token Secret
+- `opsMetrics.enabled`/`serviceMonitor.enabled`; add an `additionalIngress` rule
+  for port 9101 from the monitoring namespace
 - `migration.enabled` and hook behavior
 
 ## Migration ordering

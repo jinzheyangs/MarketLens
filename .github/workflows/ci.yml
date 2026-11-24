@@ -65,6 +65,7 @@ jobs:
           python -m app.monitoring.worker --help
           python -m app.ops.retention --help
           python -m app.ops.notification_keys --help
+          python -m app.ops.metrics_exporter --help
 
       - name: Migration upgrade / downgrade / upgrade / drift check
         run: |

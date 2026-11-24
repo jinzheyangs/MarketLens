@@ -37,7 +37,8 @@
 
 ### 通知渠道
 
-- 渠道类型：`webhook` 和 `log`（开发/审计用途）。
+- 渠道类型：`webhook`（通用 JSON）、`slack`（Incoming Webhook 文本消息）和
+  `log`（开发/审计用途）。三种类型都通过同一套 SSRF 安全 webhook 客户端发送。
 - webhook URL 和可选 HMAC signing secret 使用 Fernet 对称加密后存入
   `notification_channels.encrypted_config`。密钥只从
   `NOTIFICATION_ENCRYPTION_KEY` 环境变量/密钥管理服务读取。
@@ -165,8 +166,8 @@ Provider 和告警 webhook。
 - 调度器基于 PostgreSQL 轮询，不是 Temporal Schedule；大规模订阅（数十万级）需要
   分片或迁移到专用调度服务。
 - 变更检测基于内容哈希和来源 URL，不做 HTML 语义 diff、价格抽取或实体级变更定位。
-- 通知渠道仅实现 webhook/log；邮件、企业微信、Slack 等适配器需要新增受控 egress
-  实现，不能直接复用任意 URL。
+- 通知渠道实现 webhook/Slack/log；邮件、企业微信等适配器需要新增受控 egress 实现，
+  不能直接复用任意 URL。Slack 仅发送 severity/summary/source URL 文本，不发送原始正文。
 - 已支持单把 previous key 的在线轮换，但没有 KMS 信封加密/密钥版本表；轮换期间
   旧密钥必须保留在进程环境或密钥管理服务中，不能提前删除。
 - 配额是软上限：已开始的运行/任务不会被中断，并发窗口内仍可能短暂超过上限一个单位。

@@ -303,6 +303,11 @@ class Settings(BaseSettings):
     retention_batch_size: int = Field(default=1_000, ge=1, le=10_000)
     retention_destructive_enabled: bool = False
 
+    # Global queue exporter (separate process). Exposes aggregate backlog only;
+    # never tenant-labelled metrics.
+    ops_metrics_port: int = Field(default=9_101, ge=1_024, le=65_535)
+    ops_metrics_interval_seconds: float = Field(default=30.0, ge=5.0, le=600.0)
+
     # HTTP / API behavior.
     log_level: LogLevel = "INFO"
     log_format: Literal["json", "console"] = "json"

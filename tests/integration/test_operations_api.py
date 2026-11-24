@@ -20,6 +20,7 @@ from app.db.models import (
     ResearchRun,
 )
 from app.factory import create_app
+from app.ops.metrics_exporter import collect_snapshot
 from app.ops.retention import run_retention
 from tests.conftest import make_settings, open_client
 from tests.integration.test_api_stage2 import (
@@ -338,3 +339,14 @@ async def test_operations_queue_snapshot(operations_client: Any) -> None:
         headers=_auth(seed.tokens["workspace_admin_a"]),
     )
     assert forbidden.status_code == 403
+
+
+async def test_aggregate_queue_exporter(operations_client: Any) -> None:
+    _, seed, application, _ = operations_client
+    totals = await collect_snapshot(
+        application.state.session_factory,
+        tenant_ids=[seed.tenant_a],
+    )
+    assert totals["active_tenants"] == 1
+    assert "pending_collection_tasks" in totals
+    assert "outbox_pending" in totals
