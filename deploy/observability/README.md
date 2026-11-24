@@ -9,13 +9,13 @@ never tenant/user IDs or raw URLs.
 
 | Metric | Type | Use |
 | --- | --- | --- |
-| `marketlens_http_requests_total{method,route,status}` | counter | traffic, 5xx ratio |
-| `marketlens_http_request_duration_seconds{method,route}` | histogram | p95/p99 latency |
-| `marketlens_http_requests_in_progress` | gauge | saturation / shutdown leaks |
-| `marketlens_http_server_errors_total{method,route}` | counter | 5xx attribution |
-| `marketlens_app_info{service,version,environment}` | gauge | deployment tracking |
-| `marketlens_queue_*` | gauge | aggregate backlog from `app.ops.metrics_exporter` (no tenant labels) |
-| `marketlens_queue_last_success_timestamp_seconds` | gauge | exporter freshness |
+| `marketscope_http_requests_total{method,route,status}` | counter | traffic, 5xx ratio |
+| `marketscope_http_request_duration_seconds{method,route}` | histogram | p95/p99 latency |
+| `marketscope_http_requests_in_progress` | gauge | saturation / shutdown leaks |
+| `marketscope_http_server_errors_total{method,route}` | counter | 5xx attribution |
+| `marketscope_app_info{service,version,environment}` | gauge | deployment tracking |
+| `marketscope_queue_*` | gauge | aggregate backlog from `app.ops.metrics_exporter` (no tenant labels) |
+| `marketscope_queue_last_success_timestamp_seconds` | gauge | exporter freshness |
 
 The Helm chart includes a `ServiceMonitor` that authenticates with the metrics
 bearer token.

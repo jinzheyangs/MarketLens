@@ -33,13 +33,13 @@ variable "app_security_group_ids" {
 
 variable "db_name" {
   type        = string
-  default     = "marketlens"
+  default     = "marketscope"
   description = "Initial PostgreSQL database name."
 }
 
 variable "db_username" {
   type        = string
-  default     = "marketlens"
+  default     = "marketscope"
   description = "RDS master username."
 }
 

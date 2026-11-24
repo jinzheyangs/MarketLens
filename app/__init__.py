@@ -1,9 +1,9 @@
-"""Market intelligence backend application package."""
+"""MarketScope backend application package."""
 
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("market-intel-backend")
+    __version__ = version("marketscope-backend")
 except PackageNotFoundError:  # pragma: no cover - source checkout without installation
     __version__ = "0.1.0"
 

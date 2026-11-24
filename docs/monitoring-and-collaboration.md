@@ -50,8 +50,8 @@
 - 发送前重新执行 URL/DNS 安全校验：仅 HTTPS（开发可显式 `NOTIFICATION_ALLOW_HTTP=true`）、
   仅公网地址、固定已验证 IP 连接、不跟随重定向、限制响应大小和超时。可通过
   `NOTIFICATION_ALLOWED_DOMAINS` 进一步限制目标域后缀。
-- 支持 `X-MarketLens-Signature: sha256=<hex>` HMAC（可配置头名），以及
-  `X-MarketLens-Delivery` / `X-MarketLens-Idempotency-Key`。接收方应按 delivery ID
+- 支持 `X-MarketScope-Signature: sha256=<hex>` HMAC（可配置头名），以及
+  `X-MarketScope-Delivery` / `X-MarketScope-Idempotency-Key`。接收方应按 delivery ID
   去重。
 - 默认最多 5 次指数退避重试；目标被 SSRF 策略拒绝、渠道被禁用、密钥损坏等不可恢复
   错误直接失败并写入审计，不无限重试。

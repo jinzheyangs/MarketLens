@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="MarketLens multi-agent research worker")
+    parser = argparse.ArgumentParser(description="MarketScope multi-agent research worker")
     parser.add_argument("--once", action="store_true", help="process one batch and exit")
     args = parser.parse_args(argv)
 

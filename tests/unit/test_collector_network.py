@@ -137,12 +137,12 @@ def test_robots_parser_honors_specific_agent_allow_and_crawl_delay() -> None:
     Disallow: /private
     Crawl-delay: 5
 
-    User-agent: marketlenscollector
+    User-agent: marketscopecollector
     Allow: /private/public
     Disallow: /private
     Crawl-delay: 2
     """
-    policy = parse_robots(text, "MarketLensCollector/0.1")
+    policy = parse_robots(text, "MarketScopeCollector/0.1")
     assert policy.allows("/") is True
     assert policy.allows("/private/page") is False
     assert policy.allows("/private/public/page") is True

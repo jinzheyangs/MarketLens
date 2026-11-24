@@ -1,4 +1,4 @@
-# Example OpenTelemetry Collector pipeline for MarketLens traces and metrics.
+# Example OpenTelemetry Collector pipeline for MarketScope traces and metrics.
 # It intentionally does not collect request/response bodies or authorization
 # headers. Review attribute filters before sending data to a third party.
 receivers:

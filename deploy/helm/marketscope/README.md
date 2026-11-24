@@ -1,19 +1,19 @@
-# MarketLens Helm chart
+# MarketScope Helm chart
 
 ## Install
 
 ```bash
-kubectl create namespace marketlens
-kubectl -n marketlens create secret generic marketlens-secrets \
+kubectl create namespace marketscope
+kubectl -n marketscope create secret generic marketscope-secrets \
   --from-literal=DATABASE_URL='postgresql+asyncpg://...' \
   --from-literal=OIDC_ISSUER='https://idp.example.com' \
-  --from-literal=OIDC_AUDIENCE='marketlens' \
+  --from-literal=OIDC_AUDIENCE='marketscope' \
   --from-literal=OIDC_JWKS_URI='https://idp.example.com/jwks' \
   --from-literal=NOTIFICATION_ENCRYPTION_KEY='<fernet-key>' \
   --from-literal=METRICS_BEARER_TOKEN='<random-24+-chars>'
 
-helm upgrade --install marketlens . \
-  -n marketlens \
+helm upgrade --install marketscope . \
+  -n marketscope \
   --set api.ingress.enabled=true \
   --set api.ingress.hosts[0].host=api.example.com \
   --atomic --timeout 20m
@@ -46,7 +46,7 @@ install; Helm does not wait for ExternalSecret readiness.
 ## Rollback
 
 ```bash
-helm rollback marketlens <revision> -n marketlens --wait
+helm rollback marketscope <revision> -n marketscope --wait
 ```
 
 Rollback does not reverse database migrations. Follow the expand/contract and

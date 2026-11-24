@@ -1,4 +1,4 @@
-// k6 load/fault drill for MarketLens.
+// k6 load/fault drill for MarketScope.
 //
 //   BASE_URL=https://api.example.com K6_TOKEN="$(cat token)" k6 run deploy/load/k6-smoke.js
 //

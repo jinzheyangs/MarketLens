@@ -20,12 +20,12 @@ def test_database_url_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_database_url_requires_asyncpg_driver() -> None:
     with pytest.raises(ValidationError):
-        make_settings(database_url="postgresql://market_intel:secret@127.0.0.1:5432/market_intel")
+        make_settings(database_url="postgresql://marketscope:secret@127.0.0.1:5432/marketscope")
 
 
 def test_secrets_do_not_appear_in_repr() -> None:
     settings = make_settings(
-        database_url="postgresql+asyncpg://market_intel:super-secret@127.0.0.1:5432/db",
+        database_url="postgresql+asyncpg://marketscope:super-secret@127.0.0.1:5432/db",
         qdrant_url="http://127.0.0.1:6333",
         qdrant_api_key="qdrant-secret",
     )
@@ -241,7 +241,7 @@ def test_production_rag_requires_hardened_backends() -> None:
         rag_enabled=True,
         qdrant_url="https://qdrant.example.com",
         object_storage_backend="s3",
-        s3_bucket="marketlens-documents",
+        s3_bucket="marketscope-documents",
         s3_use_ssl=True,
         embedding_provider="http",
         embedding_api_url="https://embeddings.example.com/v1/embeddings",
@@ -253,7 +253,7 @@ def test_production_rag_requires_hardened_backends() -> None:
             rag_enabled=True,
             qdrant_local_mode=True,
             object_storage_backend="s3",
-            s3_bucket="marketlens-documents",
+            s3_bucket="marketscope-documents",
             embedding_provider="http",
             embedding_api_url="https://embeddings.example.com/v1/embeddings",
         )
@@ -262,7 +262,7 @@ def test_production_rag_requires_hardened_backends() -> None:
             rag_enabled=True,
             qdrant_url="https://qdrant.example.com",
             object_storage_backend="s3",
-            s3_bucket="marketlens-documents",
+            s3_bucket="marketscope-documents",
             embedding_provider="hash",
         )
 
@@ -305,7 +305,7 @@ def test_production_collector_hardening() -> None:
         rag_enabled=False,
         collector_enabled=True,
         object_storage_backend="s3",
-        s3_bucket="marketlens-sources",
+        s3_bucket="marketscope-sources",
     )
     assert valid.collector_enabled is True
 
@@ -320,7 +320,7 @@ def test_production_collector_hardening() -> None:
             rag_enabled=False,
             collector_enabled=True,
             object_storage_backend="s3",
-            s3_bucket="marketlens-sources",
+            s3_bucket="marketscope-sources",
             collector_allowed_ports=[8080],
         )
     with pytest.raises(ValidationError):
@@ -352,9 +352,9 @@ def test_s3_configuration_consistency() -> None:
     settings = make_settings(
         s3_endpoint_url="http://minio.example.com",
         s3_use_ssl=False,
-        s3_bucket="marketlens-documents",
+        s3_bucket="marketscope-documents",
     )
-    assert settings.s3_bucket == "marketlens-documents"
+    assert settings.s3_bucket == "marketscope-documents"
 
 
 def test_default_database_url_is_test_scoped() -> None:
@@ -445,7 +445,7 @@ def test_production_report_requires_s3() -> None:
     valid = make_production_settings(
         report_enabled=True,
         object_storage_backend="s3",
-        s3_bucket="marketlens-reports",
+        s3_bucket="marketscope-reports",
     )
     assert valid.report_enabled is True
 

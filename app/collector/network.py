@@ -520,7 +520,7 @@ def _rule_matches(pattern: str, path: str) -> bool:
 
 def _product_token(user_agent: str) -> str:
     token = user_agent.split(" ", 1)[0].split("/", 1)[0]
-    return token.strip().lower() or "marketlenscollector"
+    return token.strip().lower() or "marketscopecollector"
 
 
 @dataclass(slots=True)

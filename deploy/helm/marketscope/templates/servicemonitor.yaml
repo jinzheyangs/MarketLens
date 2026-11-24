@@ -2,16 +2,16 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ include "marketlens.fullname" . }}-api
+  name: {{ include "marketscope.fullname" . }}-api
   labels:
-    {{- include "marketlens.labels" . | nindent 4 }}
+    {{- include "marketscope.labels" . | nindent 4 }}
     {{- with .Values.serviceMonitor.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
   selector:
     matchLabels:
-      {{- include "marketlens.selectorLabels" . | nindent 6 }}
+      {{- include "marketscope.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: api
   endpoints:
     - port: http

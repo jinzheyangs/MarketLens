@@ -43,8 +43,8 @@
 2. 发布 workflow 构建多架构镜像、生成 SBOM、keyless 签名并推送到 GHCR。
 3. 在目标环境执行：
    ```bash
-   helm upgrade --install marketlens deploy/helm/marketlens \
-     -n marketlens -f values.production.yaml --atomic --timeout 20m
+   helm upgrade --install marketscope deploy/helm/marketscope \
+     -n marketscope -f values.production.yaml --atomic --timeout 20m
    ```
    pre-upgrade Hook 会先运行 `alembic upgrade head`；失败会阻止发布（`--atomic`）。
 4. 验证 `/health/ready`、`/metrics`、关键 API 与 worker 日志。
@@ -52,7 +52,7 @@
 ### 回滚
 
 ```bash
-helm rollback marketlens <revision> -n marketlens --wait --timeout 10m
+helm rollback marketscope <revision> -n marketscope --wait --timeout 10m
 ```
 
 **Helm 回滚不会回滚数据库迁移。** 迁移必须遵循 expand/contract（先加列/表，后切换
@@ -61,7 +61,7 @@ helm rollback marketlens <revision> -n marketlens --wait --timeout 10m
 
 ### 数据库迁移失败
 
-- 查看 Hook Job：`kubectl -n marketlens logs job/<release>-migrate-<revision>`。
+- 查看 Hook Job：`kubectl -n marketscope logs job/<release>-migrate-<revision>`。
 - 不要重复执行未知状态的迁移；先检查 `alembic current` 和数据库锁。
 - 迁移期间停止发布；如已部分提交（PostgreSQL DDL 事务通常原子，但长时间索引创建
   例外），按备份/前向修复方案处理。
@@ -84,14 +84,14 @@ helm rollback marketlens <revision> -n marketlens --wait --timeout 10m
 
 租户管理员可通过 `GET /api/v1/operations/queues` 获取当前租户的研究、采集、审查、
 导出、监测、通知、审批、outbox 和 consumer failure 积压数量。全局积压指标由独立
-`python -m app.ops.metrics_exporter` 进程汇总（`marketlens_queue_*`，无 tenant 标签），
+`python -m app.ops.metrics_exporter` 进程汇总（`marketscope_queue_*`，无 tenant 标签），
 Prometheus 规则包含 exporter 过期、outbox/consumer dead letter 和 backlog 告警。
 exporter 的 9101 端口必须只允许 monitoring namespace 访问。该 exporter 只提供聚合
 队列深度，不提供单 worker lease/QPS 指标。
 
 ### API 5xx / 可用性下降
 
-1. 检查 `marketlens_http_5xx:ratio5m` 与最慢路由。
+1. 检查 `marketscope_http_5xx:ratio5m` 与最慢路由。
 2. `kubectl get pods,deploy`，查看 readiness 和重启原因。
 3. 检查 PostgreSQL 连接池/延迟、Qdrant、Kafka、Temporal、对象存储。
 4. 若与发布相关，`helm rollback`；否则扩容 API 或降级非关键功能。

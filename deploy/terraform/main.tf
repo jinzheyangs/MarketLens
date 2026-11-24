@@ -3,18 +3,18 @@ data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
 resource "aws_kms_key" "data" {
-  description             = "MarketLens ${var.environment} data encryption"
+  description             = "MarketScope ${var.environment} data encryption"
   deletion_window_in_days = 30
   enable_key_rotation     = true
 }
 
 resource "aws_kms_alias" "data" {
-  name          = "alias/marketlens-${var.environment}"
+  name          = "alias/marketscope-${var.environment}"
   target_key_id = aws_kms_key.data.key_id
 }
 
 resource "aws_s3_bucket" "documents" {
-  bucket        = "${var.environment}-marketlens-${data.aws_caller_identity.current.account_id}"
+  bucket        = "${var.environment}-marketscope-${data.aws_caller_identity.current.account_id}"
   force_destroy = false
 }
 
@@ -85,7 +85,7 @@ resource "random_password" "db" {
 }
 
 resource "aws_secretsmanager_secret" "database" {
-  name                    = "marketlens/${var.environment}/database"
+  name                    = "marketscope/${var.environment}/database"
   kms_key_id              = aws_kms_key.data.arn
   recovery_window_in_days = 30
 }
@@ -103,7 +103,7 @@ resource "aws_secretsmanager_secret_version" "database" {
 }
 
 resource "aws_security_group" "database" {
-  name_prefix = "marketlens-${var.environment}-db-"
+  name_prefix = "marketscope-${var.environment}-db-"
   description = "Allow application security groups to reach PostgreSQL"
   vpc_id      = var.vpc_id
 
@@ -126,12 +126,12 @@ resource "aws_security_group" "database" {
 }
 
 resource "aws_db_subnet_group" "database" {
-  name       = "marketlens-${var.environment}"
+  name       = "marketscope-${var.environment}"
   subnet_ids = var.private_subnet_ids
 }
 
 resource "aws_db_parameter_group" "database" {
-  name   = "marketlens-${var.environment}-pg16"
+  name   = "marketscope-${var.environment}-pg16"
   family = "postgres16"
 
   parameter {
@@ -155,7 +155,7 @@ resource "aws_db_parameter_group" "database" {
 }
 
 resource "aws_db_instance" "primary" {
-  identifier                      = "marketlens-${var.environment}"
+  identifier                      = "marketscope-${var.environment}"
   engine                          = "postgres"
   engine_version                  = "16"
   instance_class                  = var.db_instance_class
@@ -178,7 +178,7 @@ resource "aws_db_instance" "primary" {
   copy_tags_to_snapshot           = true
   deletion_protection             = var.deletion_protection
   skip_final_snapshot             = false
-  final_snapshot_identifier       = "marketlens-${var.environment}-final"
+  final_snapshot_identifier       = "marketscope-${var.environment}-final"
   performance_insights_enabled    = true
   performance_insights_kms_key_id = aws_kms_key.data.arn
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]

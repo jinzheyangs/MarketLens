@@ -936,7 +936,7 @@ class MonitoringWorker:
                     try:
                         response_status = await self._services.email.send(
                             recipients=recipients,
-                            subject=f"[MarketLens][{severity}] {summary[:120]}",
+                            subject=f"[MarketScope][{severity}] {summary[:120]}",
                             body=email_body,
                             delivery_id=str(delivery.id),
                         )
@@ -958,8 +958,8 @@ class MonitoringWorker:
                         return
                 else:
                     headers = {
-                        "X-MarketLens-Delivery": str(delivery.id),
-                        "X-MarketLens-Idempotency-Key": str(delivery.id),
+                        "X-MarketScope-Delivery": str(delivery.id),
+                        "X-MarketScope-Idempotency-Key": str(delivery.id),
                     }
                     secret = config.get("signing_secret")
                     if secret:
@@ -1076,7 +1076,7 @@ class MonitoringWorker:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="MarketLens monitoring worker")
+    parser = argparse.ArgumentParser(description="MarketScope monitoring worker")
     parser.add_argument("--once", action="store_true", help="process one batch and exit")
     args = parser.parse_args(argv)
 

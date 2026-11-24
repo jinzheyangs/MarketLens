@@ -132,7 +132,7 @@ async def _channel(
         json={
             "name": name,
             "kind": "webhook",
-            "url": "https://hooks.example.test/marketlens",
+            "url": "https://hooks.example.test/marketscope",
             "signing_secret": "test-signing-secret",
         },
     )
@@ -174,7 +174,7 @@ async def test_monitoring_channel_and_subscription_lifecycle(
         json={
             "name": "ops-webhook",
             "kind": "webhook",
-            "url": "https://hooks.example.test/marketlens",
+            "url": "https://hooks.example.test/marketscope",
             "signing_secret": "test-signing-secret",
         },
     )
@@ -189,7 +189,7 @@ async def test_monitoring_channel_and_subscription_lifecycle(
         headers=_auth(seed.tokens["workspace_admin_a"]),
         json={
             "name": "ops-webhook-rotated",
-            "url": "https://hooks.example.test/marketlens-v2",
+            "url": "https://hooks.example.test/marketscope-v2",
             "signing_secret": "rotated-signing-secret",
         },
     )
@@ -201,7 +201,7 @@ async def test_monitoring_channel_and_subscription_lifecycle(
             stored = await session.get(NotificationChannel, UUID(channel["id"]))
             assert stored is not None
             config = ChannelSecretCipher(settings).decrypt(stored.encrypted_config or "")
-            assert config["url"] == "https://hooks.example.test/marketlens-v2"
+            assert config["url"] == "https://hooks.example.test/marketscope-v2"
             assert config["signing_secret"] == "rotated-signing-secret"
 
     log_channel = await client.post(
@@ -767,7 +767,7 @@ async def test_monitoring_worker_detects_change_and_delivers(
     assert len(recording_email.sent) == 1
     email = recording_email.sent[0]
     assert email["recipients"] == ["ops@example.com"]
-    assert "MarketLens" in str(email["subject"])
+    assert "MarketScope" in str(email["subject"])
     assert url in str(email["body"])
     assert email["delivery_id"]
 

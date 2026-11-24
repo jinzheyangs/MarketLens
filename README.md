@@ -1,4 +1,4 @@
-# 企业级多角色市场调研 Agent — 后端
+# MarketScope — 企业级多角色市场调研 Agent 后端
 
 面向企业团队的市场情报与调研平台后端。最终架构与交付阶段见
 [`docs/项目蓝图.md`](docs/项目蓝图.md)。
@@ -89,7 +89,7 @@ docker compose up -d postgres qdrant minio
 ```
 
 Compose 只把端口绑定到 `127.0.0.1`。Postgres 首次初始化时会额外创建
-`market_intel_test`（见 `docker/postgres/init/`）。MinIO 控制台为
+`marketscope_test`（见 `docker/postgres/init/`）。MinIO 控制台为
 `http://127.0.0.1:9001`，API 启动时会自动创建 `S3_BUCKET`（仅本地
 `S3_AUTO_CREATE_BUCKET=true`；production 禁止）。若卷已存在，需手工创建或
 `docker compose down -v` 后重建（会删除本地数据）。
@@ -146,8 +146,8 @@ DB queue，不要求 Kafka/Temporal 即可启动；设置 `EVENT_PUBLISHER=kafka
 
 ```bash
 # Helm 样例（需要真实集群、Ingress、ExternalSecret 与托管依赖）
-helm lint deploy/helm/marketlens
-helm upgrade --install marketlens deploy/helm/marketlens -n marketlens --atomic
+helm lint deploy/helm/marketscope
+helm upgrade --install marketscope deploy/helm/marketscope -n marketscope --atomic
 
 # Terraform 样例（RDS/S3/KMS/Secrets Manager；先配置远程 state）
 cd deploy/terraform && terraform init -backend=false && terraform validate
@@ -231,8 +231,8 @@ Compose 中的一次性 `migrate` 服务在 API 启动前执行 `alembic upgrade
 初次部署（没有租户管理员时可执行）：
 
 ```bash
-market-intel create-tenant --slug acme --name "Acme"
-market-intel provision-user \
+marketscope create-tenant --slug acme --name "Acme"
+marketscope provision-user \
   --tenant-slug acme \
   --subject "<idp-sub>" \
   --email admin@example.com \
@@ -473,7 +473,7 @@ market-intel provision-user \
   `tenant_id` 与事务级 `app.tenant_id`（`set_config(..., true)`）。无上下文时
   NULL 比较使读写 fail closed。
 - **生产 API 必须使用非超级用户数据库角色**；PostgreSQL 超级用户会绕过 RLS。
-  本地 Compose 的 `market_intel` 是超级用户，因此本地主要依靠应用层过滤与守卫；
+  本地 Compose 的 `marketscope` 是超级用户，因此本地主要依靠应用层过滤与守卫；
   集成测试通过 `SET ROLE` 验证非超级用户下的 RLS。
 
 ## API
@@ -737,6 +737,7 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
 - [生产运营手册](docs/operations-runbook.md)
 - [真实依赖联调](docs/real-integration.md)
 - [未完成事项与生产验收清单](docs/remaining-work.md)
+- [旧名称迁移到 MarketScope](docs/rename-to-marketscope.md)
 - [部署资产说明](deploy/README.md)
 
 ## 已知限制（跨阶段）
@@ -772,7 +773,7 @@ RPO/RTO 均不声称已验证。
 - Terraform 只覆盖 RDS/S3/KMS/Secrets Manager；VPC、EKS、MSK、Temporal、Qdrant、
   DNS/TLS、IAM/IRSA 需部署方提供。
 - API `/metrics` 覆盖 HTTP 指标；独立 `app.ops.metrics_exporter` 汇总全局队列深度
-  (`marketlens_queue_*`)，但没有单 worker lease/QPS/心跳指标，worker 存活仍依赖
+  (`marketscope_queue_*`)，但没有单 worker lease/QPS/心跳指标，worker 存活仍依赖
   Kubernetes Deployment 状态。
 - Prometheus 规则和 Grafana 看板未在真实 Prometheus/Thanos/Grafana 栈中执行。
 - 保留任务只清理运维事件表；业务数据归档、法务保留、客户删除流程仍是人工治理。

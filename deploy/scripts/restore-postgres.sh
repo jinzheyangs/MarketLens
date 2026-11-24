@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Restore a custom-format MarketLens PostgreSQL backup.
+# Restore a custom-format MarketScope PostgreSQL backup.
 #
 # Required:
 #   RESTORE_DATABASE_URL=postgresql://user:password@host:5432/dbname
-#   RESTORE_DUMP=/path/to/marketlens-....dump
+#   RESTORE_DUMP=/path/to/marketscope-....dump
 #   RESTORE_CONFIRM=<database name from the URL>
 #
 # The restore is additive by default. Set RESTORE_CLEAN=true only after taking a

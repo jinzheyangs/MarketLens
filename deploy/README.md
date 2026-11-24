@@ -1,4 +1,4 @@
-# MarketLens deployment assets
+# MarketScope deployment assets
 
 These are production-oriented **samples and operational controls**, not a claim
 that a particular cluster, cloud account, or disaster-recovery objective has
@@ -7,7 +7,7 @@ deploying organization.
 
 | Directory | Purpose |
 | --- | --- |
-| `helm/marketlens` | Helm chart for API, collector/agent/events/monitor workers, migration Job, NetworkPolicy, HPA/PDB, ServiceMonitor, ExternalSecret |
+| `helm/marketscope` | Helm chart for API, collector/agent/events/monitor workers, migration Job, NetworkPolicy, HPA/PDB, ServiceMonitor, ExternalSecret |
 | `terraform` | AWS sample: encrypted Multi-AZ RDS PostgreSQL, S3 with KMS/versioning/public-access blocks, Secrets Manager |
 | `observability` | Prometheus SLO recording/alert rules, Grafana dashboard, OpenTelemetry Collector pipeline |
 | `scripts` | PostgreSQL backup/verify/restore scripts with checksums and explicit confirmation |

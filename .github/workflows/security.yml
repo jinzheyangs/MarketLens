@@ -40,11 +40,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build --target runtime -t marketlens-backend:${{ github.sha }} .
+        run: docker build --target runtime -t marketscope-backend:${{ github.sha }} .
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: marketlens-backend:${{ github.sha }}
+          image-ref: marketscope-backend:${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
@@ -53,17 +53,17 @@ jobs:
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@v0.18.0
         with:
-          image: marketlens-backend:${{ github.sha }}
+          image: marketscope-backend:${{ github.sha }}
           format: spdx-json
-          artifact-name: marketlens-backend.spdx.json
-          output-file: marketlens-backend.spdx.json
+          artifact-name: marketscope-backend.spdx.json
+          output-file: marketscope-backend.spdx.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: container-security
           path: |
             trivy-results.sarif
-            marketlens-backend.spdx.json
+            marketscope-backend.spdx.json
           retention-days: 30
       - name: Upload Trivy SARIF
         uses: github/codeql-action/upload-sarif@v3

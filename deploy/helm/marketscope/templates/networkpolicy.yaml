@@ -2,13 +2,13 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "marketlens.fullname" . }}
+  name: {{ include "marketscope.fullname" . }}
   labels:
-    {{- include "marketlens.labels" . | nindent 4 }}
+    {{- include "marketscope.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "marketlens.selectorLabels" . | nindent 6 }}
+      {{- include "marketscope.selectorLabels" . | nindent 6 }}
   policyTypes:
     - Ingress
     - Egress

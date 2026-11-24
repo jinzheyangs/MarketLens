@@ -79,7 +79,7 @@ def _object_key(
 def _chunk_id(*, tenant_id: UUID, version_id: UUID, chunk_index: int) -> UUID:
     return uuid5(
         NAMESPACE_URL,
-        f"marketlens:{tenant_id}:{version_id}:{chunk_index}",
+        f"marketscope:{tenant_id}:{version_id}:{chunk_index}",
     )
 
 

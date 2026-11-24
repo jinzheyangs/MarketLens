@@ -28,8 +28,8 @@ from tests.conftest import make_settings, open_client
 
 pytestmark = pytest.mark.integration
 
-ISSUER = "https://idp.marketlens.test"
-AUDIENCE = "marketlens-api"
+ISSUER = "https://idp.marketscope.test"
+AUDIENCE = "marketscope-api"
 
 
 @dataclass

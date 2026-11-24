@@ -1,6 +1,6 @@
 # Terraform sample (AWS)
 
-This root module provisions the stateful dependencies MarketLens expects in
+This root module provisions the stateful dependencies MarketScope expects in
 production:
 
 - Multi-AZ RDS PostgreSQL 16 with KMS encryption, automated backups, deletion
@@ -20,7 +20,7 @@ must be supplied by the platform team.
 cd deploy/terraform
 terraform init \
   -backend-config="bucket=<state-bucket>" \
-  -backend-config="key=marketlens/production/terraform.tfstate" \
+  -backend-config="key=marketscope/production/terraform.tfstate" \
   -backend-config="region=<region>" \
   -backend-config="dynamodb_table=<lock-table>"
 terraform plan -var-file=production.tfvars

@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="MarketLens outbox/event worker")
+    parser = argparse.ArgumentParser(description="MarketScope outbox/event worker")
     parser.add_argument("--once", action="store_true", help="dispatch one batch and exit")
     args = parser.parse_args(argv)
 

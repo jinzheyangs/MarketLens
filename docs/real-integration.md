@@ -6,7 +6,7 @@
 ## 环境变量
 
 ```bash
-export TEST_DATABASE_URL='postgresql+asyncpg://market_intel:test-only@127.0.0.1:55432/market_intel_test'
+export TEST_DATABASE_URL='postgresql+asyncpg://marketscope:test-only@127.0.0.1:55432/marketscope_test'
 export QDRANT_TEST_URL='http://127.0.0.1:6333'
 export S3_TEST_ENDPOINT_URL='http://127.0.0.1:9090'
 export S3_TEST_ACCESS_KEY='test-key'
@@ -27,9 +27,9 @@ pytest -m real tests/integration/real -q
 
 ```bash
 docker run -d --name ml-postgres \
-  -e POSTGRES_USER=market_intel \
+  -e POSTGRES_USER=marketscope \
   -e POSTGRES_PASSWORD=test-only \
-  -e POSTGRES_DB=market_intel_test \
+  -e POSTGRES_DB=marketscope_test \
   -p 127.0.0.1:55432:5432 postgres:16-alpine
 ```
 

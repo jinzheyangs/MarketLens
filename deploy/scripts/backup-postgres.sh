@@ -4,20 +4,20 @@
 # Required:
 #   BACKUP_DATABASE_URL=postgresql://user:password@host:5432/dbname
 # Optional:
-#   BACKUP_DIR=/var/backups/marketlens
+#   BACKUP_DIR=/var/backups/marketscope
 #   BACKUP_RETENTION_DAYS=14
 #   BACKUP_S3_URI=s3://bucket/prefix
 #   BACKUP_KMS_KEY_ID=arn:aws:kms:...
 set -euo pipefail
 
 : "${BACKUP_DATABASE_URL:?BACKUP_DATABASE_URL is required}"
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/marketlens}"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/marketscope}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 
 umask 077
 mkdir -p "$BACKUP_DIR"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-dump="$BACKUP_DIR/marketlens-$timestamp.dump"
+dump="$BACKUP_DIR/marketscope-$timestamp.dump"
 checksum="$dump.sha256"
 
 if ! command -v pg_dump >/dev/null 2>&1; then
@@ -51,7 +51,7 @@ if [[ -n "${BACKUP_S3_URI:-}" ]]; then
 fi
 
 find "$BACKUP_DIR" -maxdepth 1 -type f \
-  \( -name 'marketlens-*.dump' -o -name 'marketlens-*.dump.sha256' \) \
+  \( -name 'marketscope-*.dump' -o -name 'marketscope-*.dump.sha256' \) \
   -mtime "+$RETENTION_DAYS" -delete
 
 echo "backup_complete $dump"

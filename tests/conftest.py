@@ -5,7 +5,7 @@ import os
 # Must be set before importing anything that constructs module-level settings.
 os.environ.setdefault(
     "DATABASE_URL",
-    "postgresql+asyncpg://market_intel:test-only@127.0.0.1:5432/market_intel_test",
+    "postgresql+asyncpg://marketscope:test-only@127.0.0.1:5432/marketscope_test",
 )
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("DEBUG", "false")
@@ -24,7 +24,7 @@ from app.core.config import Settings
 from app.factory import create_app
 
 DEFAULT_TEST_DATABASE_URL = (
-    "postgresql+asyncpg://market_intel:test-only@127.0.0.1:5432/market_intel_test"
+    "postgresql+asyncpg://marketscope:test-only@127.0.0.1:5432/marketscope_test"
 )
 
 
@@ -36,7 +36,7 @@ def make_settings(**overrides: Any) -> Settings:
         "allowed_hosts": ["testserver", "localhost", "127.0.0.1"],
         "oidc_enabled": False,
         "oidc_issuer": "https://idp.test",
-        "oidc_audience": "marketlens-test",
+        "oidc_audience": "marketscope-test",
         "oidc_jwks_uri": "https://idp.test/jwks",
         "otel_enabled": False,
         "log_format": "json",
@@ -51,7 +51,7 @@ def make_production_settings(**overrides: Any) -> Settings:
         "allowed_hosts": ["api.example.com"],
         "oidc_enabled": True,
         "oidc_issuer": "https://idp.example.com",
-        "oidc_audience": "marketlens",
+        "oidc_audience": "marketscope",
         "oidc_jwks_uri": "https://idp.example.com/jwks",
         "temporal_enabled": True,
         "temporal_host": "temporal.example.com:7233",
@@ -60,7 +60,7 @@ def make_production_settings(**overrides: Any) -> Settings:
         "kafka_bootstrap_servers": ["kafka.example.com:9093"],
         "kafka_security_protocol": "SASL_SSL",
         "kafka_sasl_mechanism": "SCRAM-SHA-512",
-        "kafka_sasl_username": "marketlens",
+        "kafka_sasl_username": "marketscope",
         "kafka_sasl_password": "test-only-kafka-password",
         "event_consumer_enabled": True,
     }

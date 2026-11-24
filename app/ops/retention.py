@@ -180,7 +180,7 @@ async def run_retention(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="MarketLens operational retention")
+    parser = argparse.ArgumentParser(description="MarketScope operational retention")
     parser.add_argument(
         "--execute",
         action="store_true",

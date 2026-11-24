@@ -5,7 +5,7 @@ fullnameOverride: ""
 
 image:
   registry: ghcr.io/jinzheyangs
-  repository: marketlens-api
+  repository: marketscope-api
   # Defaults to .Chart.AppVersion when empty.
   tag: ""
   pullPolicy: IfNotPresent
@@ -18,7 +18,7 @@ serviceAccount:
 
 # Name of an existing Secret (or ExternalSecret target) containing environment
 # variables. Never put secret values in this values file.
-existingSecret: marketlens-secrets
+existingSecret: marketscope-secrets
 # Optional extra envFrom entries.
 envFrom: []
 env:
@@ -206,7 +206,7 @@ serviceMonitor:
   scrapeTimeout: 10s
   # Secret containing the METRICS_BEARER_TOKEN value.
   bearerTokenSecret:
-    name: marketlens-metrics
+    name: marketscope-metrics
     key: token
   labels: {}
 
@@ -215,24 +215,24 @@ externalSecrets:
   secretStoreRef:
     name: aws-secrets-manager
     kind: ClusterSecretStore
-  targetSecretName: marketlens-secrets
+  targetSecretName: marketscope-secrets
   refreshInterval: 1h
   data:
     - secretKey: DATABASE_URL
       remoteRef:
-        key: marketlens/production/database
+        key: marketscope/production/database
         property: url
     - secretKey: OIDC_JWKS_URI
       remoteRef:
-        key: marketlens/production/oidc
+        key: marketscope/production/oidc
         property: jwks_uri
     - secretKey: NOTIFICATION_ENCRYPTION_KEY
       remoteRef:
-        key: marketlens/production/notifications
+        key: marketscope/production/notifications
         property: fernet_key
     - secretKey: METRICS_BEARER_TOKEN
       remoteRef:
-        key: marketlens/production/metrics
+        key: marketscope/production/metrics
         property: token
 
 topologySpreadConstraints:

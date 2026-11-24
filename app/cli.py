@@ -100,7 +100,7 @@ async def provision_user(
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="market-intel",
+        prog="marketscope",
         description="Administrative bootstrap commands for the market intelligence backend.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)

@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from app.auth.oidc import JWTVerifier, TokenVerificationError
 
 ISSUER = "https://idp.example.test"
-AUDIENCE = "marketlens-api"
+AUDIENCE = "marketscope-api"
 
 _PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 _PUBLIC_KEY = _PRIVATE_KEY.public_key()

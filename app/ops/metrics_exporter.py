@@ -76,7 +76,7 @@ async def collect_snapshot(
 def _gauges(registry: CollectorRegistry) -> dict[str, Gauge]:
     return {
         field: Gauge(
-            f"marketlens_queue_{field}",
+            f"marketscope_queue_{field}",
             "Aggregate tenants' operational backlog (no tenant labels).",
             registry=registry,
         )
@@ -91,7 +91,7 @@ async def run_forever(
     registry = CollectorRegistry(auto_describe=True)
     gauges = _gauges(registry)
     last_success = Gauge(
-        "marketlens_queue_last_success_timestamp_seconds",
+        "marketscope_queue_last_success_timestamp_seconds",
         "Unix timestamp of the last successful queue snapshot.",
         registry=registry,
     )
@@ -112,7 +112,7 @@ async def run_forever(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="MarketLens queue metrics exporter")
+    parser = argparse.ArgumentParser(description="MarketScope queue metrics exporter")
     parser.add_argument(
         "--once",
         action="store_true",

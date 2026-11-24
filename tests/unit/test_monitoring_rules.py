@@ -23,7 +23,7 @@ def test_channel_secret_cipher_round_trip_and_tamper_detection() -> None:
     settings = make_settings(notification_encryption_key=key)
     cipher = ChannelSecretCipher(settings)
     secret = {
-        "url": "https://hooks.example.com/marketlens",
+        "url": "https://hooks.example.com/marketscope",
         "signing_secret": "top-secret-value",
     }
     token = cipher.encrypt(secret)
@@ -47,7 +47,7 @@ def test_channel_secret_cipher_previous_key_rotates_ciphertext() -> None:
         notification_encryption_key=new_key,
         notification_previous_encryption_key=old_key,
     )
-    secret = {"url": "https://hooks.example.com/marketlens"}
+    secret = {"url": "https://hooks.example.com/marketscope"}
 
     old_token = ChannelSecretCipher(old_settings).encrypt(secret)
     rotation_cipher = ChannelSecretCipher(rotating)
@@ -107,12 +107,12 @@ def test_email_message_sanitizes_headers_and_sets_delivery_id() -> None:
     message = build_email_message(
         sender="alerts@example.com",
         recipients=["ops@example.com"],
-        subject="[MarketLens] summary\r\nBcc: attacker@example.com",
+        subject="[MarketScope] summary\r\nBcc: attacker@example.com",
         body="Body with source https://example.test/page",
         delivery_id="delivery-123",
     )
     assert "\n" not in message["Subject"]
     assert "\r" not in message["Subject"]
-    assert message["Message-ID"] == "<delivery-123@marketlens.local>"
-    assert message["X-MarketLens-Delivery"] == "delivery-123"
+    assert message["Message-ID"] == "<delivery-123@marketscope.local>"
+    assert message["X-MarketScope-Delivery"] == "delivery-123"
     assert message.get_content().startswith("Body with source")

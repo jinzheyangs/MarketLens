@@ -5,21 +5,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "marketlens.fullname" $root }}-{{ $name }}
+  name: {{ include "marketscope.fullname" $root }}-{{ $name }}
   labels:
-    {{- include "marketlens.labels" $root | nindent 4 }}
+    {{- include "marketscope.labels" $root | nindent 4 }}
     app.kubernetes.io/component: {{ $name }}-worker
 spec:
   replicas: {{ $worker.replicaCount }}
   revisionHistoryLimit: 5
   selector:
     matchLabels:
-      {{- include "marketlens.selectorLabels" $root | nindent 6 }}
+      {{- include "marketscope.selectorLabels" $root | nindent 6 }}
       app.kubernetes.io/component: {{ $name }}-worker
   template:
     metadata:
       labels:
-        {{- include "marketlens.selectorLabels" $root | nindent 8 }}
+        {{- include "marketscope.selectorLabels" $root | nindent 8 }}
         app.kubernetes.io/component: {{ $name }}-worker
       annotations:
         checksum/values: {{ toYaml $root.Values.env | sha256sum }}
@@ -27,25 +27,25 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ include "marketlens.serviceAccountName" $root }}
+      serviceAccountName: {{ include "marketscope.serviceAccountName" $root }}
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 60
       securityContext:
-        {{- include "marketlens.podSecurityContext" $root | nindent 8 }}
+        {{- include "marketscope.podSecurityContext" $root | nindent 8 }}
       {{- with $root.Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: {{ $name }}
-          image: {{ include "marketlens.image" $root }}
+          image: {{ include "marketscope.image" $root }}
           imagePullPolicy: {{ $root.Values.image.pullPolicy }}
           command:
             {{- toYaml $worker.command | nindent 12 }}
           securityContext:
-            {{- include "marketlens.securityContext" $root | nindent 12 }}
+            {{- include "marketscope.securityContext" $root | nindent 12 }}
           env:
-            {{- include "marketlens.env" $root | nindent 12 }}
+            {{- include "marketscope.env" $root | nindent 12 }}
           envFrom:
             - secretRef:
                 name: {{ $root.Values.existingSecret }}

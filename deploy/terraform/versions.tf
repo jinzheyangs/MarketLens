@@ -22,7 +22,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Application = "marketlens"
+      Application = "marketscope"
       Environment = var.environment
       ManagedBy   = "terraform"
     }

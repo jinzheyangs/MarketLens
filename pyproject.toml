@@ -3,13 +3,13 @@ requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
 
 [project]
-name = "market-intel-backend"
+name = "marketscope-backend"
 version = "0.1.0"
 description = "Enterprise multi-role market research agent backend"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
-authors = [{ name = "Market Intelligence Platform" }]
+authors = [{ name = "MarketScope Platform" }]
 dependencies = [
     "fastapi>=0.115,<1.0",
     "uvicorn[standard]>=0.32,<1.0",
@@ -40,7 +40,7 @@ dependencies = [
 ]
 
 [project.scripts]
-market-intel = "app.cli:main"
+marketscope = "app.cli:main"
 
 [project.optional-dependencies]
 dev = [

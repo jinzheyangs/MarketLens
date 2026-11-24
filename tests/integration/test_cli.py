@@ -13,7 +13,7 @@ from app.schemas.users import UserProvisionRequest
 
 pytestmark = pytest.mark.integration
 
-ISSUER = "https://idp.marketlens.test"
+ISSUER = "https://idp.marketscope.test"
 
 
 async def test_bootstrap_tenant_and_tenant_admin(

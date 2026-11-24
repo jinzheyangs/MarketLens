@@ -23,7 +23,7 @@ async def test_metrics_endpoint_requires_configured_bearer_token(
     application = create_app(settings)
     application.state.token_verifier = JWTVerifier(
         issuer="https://idp.test",
-        audience="marketlens-test",
+        audience="marketscope-test",
         algorithms=("RS256",),
         key_resolver=lambda _raw_token: None,
     )
@@ -40,9 +40,9 @@ async def test_metrics_endpoint_requires_configured_bearer_token(
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/plain")
         body = response.text
-        assert "marketlens_app_info" in body
-        assert "marketlens_http_requests_total" in body
-        assert "marketlens_http_request_duration_seconds" in body
+        assert "marketscope_app_info" in body
+        assert "marketscope_http_requests_total" in body
+        assert "marketscope_http_request_duration_seconds" in body
         assert "/health/live" in body
         # Tenant/user identifiers and raw paths must never become label values.
         assert "tenant" not in body.lower()
@@ -58,7 +58,7 @@ async def test_metrics_endpoint_is_absent_when_disabled(
     application = create_app(settings)
     application.state.token_verifier = JWTVerifier(
         issuer="https://idp.test",
-        audience="marketlens-test",
+        audience="marketscope-test",
         algorithms=("RS256",),
         key_resolver=lambda _raw_token: None,
     )

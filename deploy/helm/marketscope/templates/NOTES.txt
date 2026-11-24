@@ -1,4 +1,4 @@
-MarketLens has been deployed.
+MarketScope has been deployed.
 
 1. Create the runtime Secret (or enable externalSecrets) named:
    {{ .Values.existingSecret }}
@@ -7,7 +7,7 @@ MarketLens has been deployed.
    METRICS_BEARER_TOKEN (when metrics are enabled).
 
 2. The pre-upgrade migration Job runs `alembic upgrade head`. Review its logs:
-   kubectl -n {{ .Release.Namespace }} logs job/{{ include "marketlens.fullname" . }}-migrate-{{ .Release.Revision }}
+   kubectl -n {{ .Release.Namespace }} logs job/{{ include "marketscope.fullname" . }}-migrate-{{ .Release.Revision }}
 
 3. Verify readiness:
    kubectl -n {{ .Release.Namespace }} get pods

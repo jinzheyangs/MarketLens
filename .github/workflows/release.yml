@@ -17,7 +17,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/marketlens-api
+  IMAGE_NAME: ${{ github.repository_owner }}/marketscope-api
 
 jobs:
   release:
@@ -64,8 +64,8 @@ jobs:
         with:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
           format: spdx-json
-          artifact-name: marketlens-release.spdx.json
-          output-file: marketlens-release.spdx.json
+          artifact-name: marketscope-release.spdx.json
+          output-file: marketscope-release.spdx.json
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3.7.0
@@ -81,6 +81,6 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           cosign attest --yes \
-            --predicate marketlens-release.spdx.json \
+            --predicate marketscope-release.spdx.json \
             --type spdxjson \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"

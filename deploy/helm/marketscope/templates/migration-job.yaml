@@ -2,9 +2,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "marketlens.fullname" . }}-migrate-{{ .Release.Revision }}
+  name: {{ include "marketscope.fullname" . }}-migrate-{{ .Release.Revision }}
   labels:
-    {{- include "marketlens.labels" . | nindent 4 }}
+    {{- include "marketscope.labels" . | nindent 4 }}
     app.kubernetes.io/component: migration
   annotations:
     helm.sh/hook: pre-install,pre-upgrade
@@ -17,23 +17,23 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "marketlens.selectorLabels" . | nindent 8 }}
+        {{- include "marketscope.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: migration
     spec:
-      serviceAccountName: {{ if .Values.serviceAccount.create }}{{ include "marketlens.fullname" . }}-migrate{{ else }}default{{ end }}
+      serviceAccountName: {{ if .Values.serviceAccount.create }}{{ include "marketscope.fullname" . }}-migrate{{ else }}default{{ end }}
       automountServiceAccountToken: false
       restartPolicy: Never
       securityContext:
-        {{- include "marketlens.podSecurityContext" . | nindent 8 }}
+        {{- include "marketscope.podSecurityContext" . | nindent 8 }}
       containers:
         - name: migrate
-          image: {{ include "marketlens.image" . }}
+          image: {{ include "marketscope.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["alembic", "upgrade", "head"]
           securityContext:
-            {{- include "marketlens.securityContext" . | nindent 12 }}
+            {{- include "marketscope.securityContext" . | nindent 12 }}
           env:
-            {{- include "marketlens.env" . | nindent 12 }}
+            {{- include "marketscope.env" . | nindent 12 }}
           envFrom:
             - secretRef:
                 name: {{ .Values.existingSecret }}

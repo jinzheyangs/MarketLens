@@ -499,7 +499,7 @@ class CollectorWorker:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="MarketLens collection worker")
+    parser = argparse.ArgumentParser(description="MarketScope collection worker")
     parser.add_argument("--once", action="store_true", help="process one batch and exit")
     args = parser.parse_args(argv)
 

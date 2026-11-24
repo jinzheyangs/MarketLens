@@ -67,4 +67,4 @@ async def test_production_disables_docs_and_enables_hsts() -> None:
 async def test_development_docs_are_available(client: AsyncClient) -> None:
     response = await client.get("/openapi.json")
     assert response.status_code == 200
-    assert response.json()["info"]["title"] == "Market Intelligence Backend"
+    assert response.json()["info"]["title"] == "MarketScope Backend"

@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "marketlens.fullname" . }}-api
+  name: {{ include "marketscope.fullname" . }}-api
   labels:
-    {{- include "marketlens.labels" . | nindent 4 }}
+    {{- include "marketscope.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
 spec:
   replicas: {{ .Values.api.replicaCount }}
@@ -15,12 +15,12 @@ spec:
       maxSurge: 1
   selector:
     matchLabels:
-      {{- include "marketlens.selectorLabels" . | nindent 6 }}
+      {{- include "marketscope.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: api
   template:
     metadata:
       labels:
-        {{- include "marketlens.selectorLabels" . | nindent 8 }}
+        {{- include "marketscope.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: api
       annotations:
         checksum/values: {{ toYaml .Values.env | sha256sum }}
@@ -28,11 +28,11 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ include "marketlens.serviceAccountName" . }}
+      serviceAccountName: {{ include "marketscope.serviceAccountName" . }}
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: {{ .Values.api.terminationGracePeriodSeconds }}
       securityContext:
-        {{- include "marketlens.podSecurityContext" . | nindent 8 }}
+        {{- include "marketscope.podSecurityContext" . | nindent 8 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -41,17 +41,17 @@ spec:
         {{- toYaml .Values.topologySpreadConstraints | nindent 8 }}
       containers:
         - name: api
-          image: {{ include "marketlens.image" . }}
+          image: {{ include "marketscope.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
           securityContext:
-            {{- include "marketlens.securityContext" . | nindent 12 }}
+            {{- include "marketscope.securityContext" . | nindent 12 }}
           ports:
             - name: http
               containerPort: 8000
               protocol: TCP
           env:
-            {{- include "marketlens.env" . | nindent 12 }}
+            {{- include "marketscope.env" . | nindent 12 }}
           envFrom:
             - secretRef:
                 name: {{ .Values.existingSecret }}

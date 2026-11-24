@@ -36,31 +36,31 @@ class Metrics:
         self._otel_duration: OtelHistogram | None = None
         self.registry = CollectorRegistry(auto_describe=True)
         self.http_requests = Counter(
-            "marketlens_http_requests_total",
+            "marketscope_http_requests_total",
             "HTTP requests processed by the API.",
             ("method", "route", "status"),
             registry=self.registry,
         )
         self.http_request_duration = Histogram(
-            "marketlens_http_request_duration_seconds",
+            "marketscope_http_request_duration_seconds",
             "HTTP request latency in seconds.",
             ("method", "route"),
             buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
             registry=self.registry,
         )
         self.http_requests_in_progress = Gauge(
-            "marketlens_http_requests_in_progress",
+            "marketscope_http_requests_in_progress",
             "HTTP requests currently being processed.",
             registry=self.registry,
         )
         self.http_server_errors = Counter(
-            "marketlens_http_server_errors_total",
+            "marketscope_http_server_errors_total",
             "HTTP responses with status >= 500.",
             ("method", "route"),
             registry=self.registry,
         )
         self.app_info = Gauge(
-            "marketlens_app_info",
+            "marketscope_app_info",
             "Static build/deployment information.",
             ("service", "version", "environment"),
             registry=self.registry,
@@ -80,12 +80,12 @@ class Metrics:
         self._otel_initialized = True
         meter = otel_metrics.get_meter(self._otel_service_name)
         self._otel_requests = meter.create_counter(
-            "marketlens.http.requests",
+            "marketscope.http.requests",
             unit="1",
             description="HTTP requests processed by the API.",
         )
         self._otel_duration = meter.create_histogram(
-            "marketlens.http.request.duration",
+            "marketscope.http.request.duration",
             unit="s",
             description="HTTP request latency.",
         )

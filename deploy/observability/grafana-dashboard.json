@@ -22,7 +22,7 @@
       "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
       "targets": [
         {
-          "expr": "sum by (status) (rate(marketlens_http_requests_total{route!=\"/metrics\"}[5m]))",
+          "expr": "sum by (status) (rate(marketscope_http_requests_total{route!=\"/metrics\"}[5m]))",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
@@ -50,7 +50,7 @@
       },
       "targets": [
         {
-          "expr": "marketlens:http_5xx:ratio5m",
+          "expr": "marketscope:http_5xx:ratio5m",
           "legendFormat": "5xx ratio",
           "refId": "A"
         }
@@ -65,12 +65,12 @@
       "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
       "targets": [
         {
-          "expr": "marketlens:http_latency_p95:5m",
+          "expr": "marketscope:http_latency_p95:5m",
           "legendFormat": "p95",
           "refId": "A"
         },
         {
-          "expr": "marketlens:http_latency_p99:5m",
+          "expr": "marketscope:http_latency_p99:5m",
           "legendFormat": "p99",
           "refId": "B"
         }
@@ -85,7 +85,7 @@
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "targets": [
         {
-          "expr": "marketlens_http_requests_in_progress",
+          "expr": "marketscope_http_requests_in_progress",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
@@ -100,7 +100,7 @@
       "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
       "targets": [
         {
-          "expr": "topk(10, histogram_quantile(0.95, sum by (route, le) (rate(marketlens_http_request_duration_seconds_bucket[5m]))))",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (route, le) (rate(marketscope_http_request_duration_seconds_bucket[5m]))))",
           "legendFormat": "{{route}}",
           "refId": "A"
         }
@@ -115,7 +115,7 @@
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "targets": [
         {
-          "expr": "sum(up{job=~\"marketlens-api.*\"})",
+          "expr": "sum(up{job=~\"marketscope-api.*\"})",
           "refId": "A"
         }
       ],
@@ -124,7 +124,7 @@
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["marketlens", "slo"],
+  "tags": ["marketscope", "slo"],
   "templating": {
     "list": [
       {
@@ -141,7 +141,7 @@
     ]
   },
   "time": { "from": "now-6h", "to": "now" },
-  "title": "MarketLens API SLO",
-  "uid": "marketlens-api-slo",
+  "title": "MarketScope API SLO",
+  "uid": "marketscope-api-slo",
   "version": 1
 }

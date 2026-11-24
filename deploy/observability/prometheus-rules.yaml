@@ -1,136 +1,136 @@
 groups:
-  - name: marketlens-slo-recording
+  - name: marketscope-slo-recording
     interval: 30s
     rules:
-      - record: marketlens:http_requests:rate5m
+      - record: marketscope:http_requests:rate5m
         expr: |
-          sum(rate(marketlens_http_requests_total{route!="/metrics"}[5m]))
-      - record: marketlens:http_5xx:ratio5m
+          sum(rate(marketscope_http_requests_total{route!="/metrics"}[5m]))
+      - record: marketscope:http_5xx:ratio5m
         expr: |
-          sum(rate(marketlens_http_requests_total{status=~"5..",route!="/metrics"}[5m]))
+          sum(rate(marketscope_http_requests_total{status=~"5..",route!="/metrics"}[5m]))
           /
-          clamp_min(sum(rate(marketlens_http_requests_total{route!="/metrics"}[5m])), 0.001)
-      - record: marketlens:http_latency_p95:5m
+          clamp_min(sum(rate(marketscope_http_requests_total{route!="/metrics"}[5m])), 0.001)
+      - record: marketscope:http_latency_p95:5m
         expr: |
           histogram_quantile(
             0.95,
-            sum by (le) (rate(marketlens_http_request_duration_seconds_bucket[5m]))
+            sum by (le) (rate(marketscope_http_request_duration_seconds_bucket[5m]))
           )
-      - record: marketlens:http_latency_p99:5m
+      - record: marketscope:http_latency_p99:5m
         expr: |
           histogram_quantile(
             0.99,
-            sum by (le) (rate(marketlens_http_request_duration_seconds_bucket[5m]))
+            sum by (le) (rate(marketscope_http_request_duration_seconds_bucket[5m]))
           )
 
-  - name: marketlens-slo-alerts
+  - name: marketscope-slo-alerts
     rules:
-      - alert: MarketLensAvailabilityBudgetBurn
-        expr: marketlens:http_5xx:ratio5m > (14.4 * 0.001)
+      - alert: MarketScopeAvailabilityBudgetBurn
+        expr: marketscope:http_5xx:ratio5m > (14.4 * 0.001)
         for: 10m
         labels:
           severity: critical
-          service: marketlens-api
+          service: marketscope-api
         annotations:
-          summary: MarketLens is burning the 99.9% availability error budget.
+          summary: MarketScope is burning the 99.9% availability error budget.
           description: >-
             5xx ratio {{ $value | humanizePercentage }} over 5m exceeds the
             14.4x burn rate for a 30-day 99.9% SLO. Follow the on-call runbook.
           runbook_url: docs/operations-runbook.md
 
-      - alert: MarketLensHighLatency
-        expr: marketlens:http_latency_p95:5m > 1
+      - alert: MarketScopeHighLatency
+        expr: marketscope:http_latency_p95:5m > 1
         for: 10m
         labels:
           severity: warning
-          service: marketlens-api
+          service: marketscope-api
         annotations:
-          summary: MarketLens API p95 latency is above 1 second.
+          summary: MarketScope API p95 latency is above 1 second.
           description: >-
             p95 is {{ $value | humanizeDuration }} over 5m. Check database
             saturation, external provider latency, and worker backlog.
           runbook_url: docs/operations-runbook.md
 
-      - alert: MarketLensApiNoTraffic
-        expr: sum(up{job=~"marketlens-api.*"}) == 0
+      - alert: MarketScopeApiNoTraffic
+        expr: sum(up{job=~"marketscope-api.*"}) == 0
         for: 5m
         labels:
           severity: critical
-          service: marketlens-api
+          service: marketscope-api
         annotations:
-          summary: Prometheus cannot scrape any MarketLens API instance.
+          summary: Prometheus cannot scrape any MarketScope API instance.
           description: Check Deployments, NetworkPolicy, Service endpoints, and the metrics bearer token.
           runbook_url: docs/operations-runbook.md
 
-      - alert: MarketLensWorkerUnavailable
+      - alert: MarketScopeWorkerUnavailable
         expr: |
           max by (deployment) (
             kube_deployment_status_replicas_unavailable{
-              namespace="marketlens",
-              deployment=~"marketlens-(collector|agent|events|monitoring)"
+              namespace="marketscope",
+              deployment=~"marketscope-(collector|agent|events|monitoring)"
             }
           ) > 0
         for: 15m
         labels:
           severity: warning
-          service: marketlens-workers
+          service: marketscope-workers
         annotations:
-          summary: A MarketLens worker Deployment has unavailable replicas.
+          summary: A MarketScope worker Deployment has unavailable replicas.
           description: Deployment {{ $labels.deployment }} has {{ $value }} unavailable replicas.
           runbook_url: docs/operations-runbook.md
 
-      - alert: MarketLensQueueExporterStale
-        expr: absent(marketlens_queue_last_success_timestamp_seconds) or (time() - marketlens_queue_last_success_timestamp_seconds > 300)
+      - alert: MarketScopeQueueExporterStale
+        expr: absent(marketscope_queue_last_success_timestamp_seconds) or (time() - marketscope_queue_last_success_timestamp_seconds > 300)
         for: 5m
         labels:
           severity: warning
-          service: marketlens-ops-metrics
+          service: marketscope-ops-metrics
         annotations:
           summary: Aggregate queue metrics have not refreshed for 5 minutes.
           description: Check the ops-metrics Deployment, database connectivity, and RLS role.
           runbook_url: docs/operations-runbook.md
 
-      - alert: MarketLensOutboxDeadLetters
-        expr: marketlens_queue_outbox_failed > 0
+      - alert: MarketScopeOutboxDeadLetters
+        expr: marketscope_queue_outbox_failed > 0
         for: 10m
         labels:
           severity: critical
-          service: marketlens-events
+          service: marketscope-events
         annotations:
           summary: Domain events are in the outbox failed state.
           description: Inspect outbox/Kafka connectivity and replay after root cause is fixed.
           runbook_url: docs/operations-runbook.md
 
-      - alert: MarketLensConsumerDeadLetters
-        expr: marketlens_queue_consumer_failures_dead_letter > 0
+      - alert: MarketScopeConsumerDeadLetters
+        expr: marketscope_queue_consumer_failures_dead_letter > 0
         for: 10m
         labels:
           severity: critical
-          service: marketlens-events
+          service: marketscope-events
         annotations:
           summary: Consumer failures reached dead-letter state.
           description: Inspect event_consumer_failures and decide whether to replay or fix the handler.
           runbook_url: docs/operations-runbook.md
 
-      - alert: MarketLensQueueBacklogHigh
-        expr: marketlens_queue_pending_collection_tasks + marketlens_queue_pending_notification_deliveries > 10000
+      - alert: MarketScopeQueueBacklogHigh
+        expr: marketscope_queue_pending_collection_tasks + marketscope_queue_pending_notification_deliveries > 10000
         for: 20m
         labels:
           severity: warning
-          service: marketlens-workers
+          service: marketscope-workers
         annotations:
           summary: Collection or notification backlog exceeds 10,000 items.
           description: Scale the relevant worker or investigate upstream dependency latency.
           runbook_url: docs/operations-runbook.md
 
-      - alert: MarketLensMigrationJobFailed
+      - alert: MarketScopeMigrationJobFailed
         expr: |
-          kube_job_status_failed{namespace="marketlens", job_name=~"marketlens-.*-migrate-.*"} > 0
+          kube_job_status_failed{namespace="marketscope", job_name=~"marketscope-.*-migrate-.*"} > 0
         for: 5m
         labels:
           severity: critical
-          service: marketlens-migrations
+          service: marketscope-migrations
         annotations:
-          summary: A MarketLens Alembic migration Job failed.
+          summary: A MarketScope Alembic migration Job failed.
           description: Inspect the Job logs before retrying or rolling back.
           runbook_url: docs/operations-runbook.md

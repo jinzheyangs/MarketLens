@@ -64,9 +64,9 @@
 
 ```bash
 terraform apply           # staging 账号
-helm upgrade --install marketlens deploy/helm/marketlens \
-  -n marketlens -f values.staging.yaml --atomic --timeout 20m
-kubectl -n marketlens get pods,jobs,svc,networkpolicy
+helm upgrade --install marketscope deploy/helm/marketscope \
+  -n marketscope -f values.staging.yaml --atomic --timeout 20m
+kubectl -n marketscope get pods,jobs,svc,networkpolicy
 ```
 
 ### 2.2 Terraform 覆盖范围

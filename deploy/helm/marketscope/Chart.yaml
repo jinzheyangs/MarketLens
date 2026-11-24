@@ -1,6 +1,6 @@
 apiVersion: v2
-name: marketlens
-description: MarketLens API and background workers
+name: marketscope
+description: MarketScope API and background workers
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
@@ -10,4 +10,4 @@ keywords:
   - research
   - fastapi
 maintainers:
-  - name: MarketLens Platform
+  - name: MarketScope Platform

@@ -16,13 +16,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: market_intel
+          POSTGRES_USER: marketscope
           POSTGRES_PASSWORD: ci-only-password
-          POSTGRES_DB: market_intel_test
+          POSTGRES_DB: marketscope_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U market_intel -d market_intel_test"
+          --health-cmd "pg_isready -U marketscope -d marketscope_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -30,8 +30,8 @@ jobs:
     env:
       ENVIRONMENT: test
       DEBUG: "false"
-      DATABASE_URL: postgresql+asyncpg://market_intel:ci-only-password@127.0.0.1:5432/market_intel_test
-      TEST_DATABASE_URL: postgresql+asyncpg://market_intel:ci-only-password@127.0.0.1:5432/market_intel_test
+      DATABASE_URL: postgresql+asyncpg://marketscope:ci-only-password@127.0.0.1:5432/marketscope_test
+      TEST_DATABASE_URL: postgresql+asyncpg://marketscope:ci-only-password@127.0.0.1:5432/marketscope_test
       QDRANT_URL: ""
       OTEL_ENABLED: "false"
 
@@ -83,20 +83,20 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
-          mkdir -p /tmp/marketlens-backups
-          BACKUP_DATABASE_URL="postgresql://market_intel:ci-only-password@127.0.0.1:5432/market_intel_test" \
-            BACKUP_DIR=/tmp/marketlens-backups \
+          mkdir -p /tmp/marketscope-backups
+          BACKUP_DATABASE_URL="postgresql://marketscope:ci-only-password@127.0.0.1:5432/marketscope_test" \
+            BACKUP_DIR=/tmp/marketscope-backups \
             bash deploy/scripts/backup-postgres.sh
-          dump=$(ls -t /tmp/marketlens-backups/*.dump | head -1)
+          dump=$(ls -t /tmp/marketscope-backups/*.dump | head -1)
           bash deploy/scripts/verify-backup.sh "$dump"
-          psql -h 127.0.0.1 -U market_intel -d market_intel_test \
-            -c "DROP DATABASE IF EXISTS market_intel_restore" \
-            -c "CREATE DATABASE market_intel_restore"
-          RESTORE_DATABASE_URL="postgresql://market_intel:ci-only-password@127.0.0.1:5432/market_intel_restore" \
+          psql -h 127.0.0.1 -U marketscope -d marketscope_test \
+            -c "DROP DATABASE IF EXISTS marketscope_restore" \
+            -c "CREATE DATABASE marketscope_restore"
+          RESTORE_DATABASE_URL="postgresql://marketscope:ci-only-password@127.0.0.1:5432/marketscope_restore" \
             RESTORE_DUMP="$dump" \
-            RESTORE_CONFIRM=market_intel_restore \
+            RESTORE_CONFIRM=marketscope_restore \
             bash deploy/scripts/restore-postgres.sh
-          psql -h 127.0.0.1 -U market_intel -d market_intel_restore \
+          psql -h 127.0.0.1 -U marketscope -d marketscope_restore \
             -c "SELECT count(*) FROM tenants"
 
   deploy-validate:
@@ -123,14 +123,14 @@ jobs:
 
       - name: Helm lint and render
         run: |
-          helm lint deploy/helm/marketlens
-          helm template marketlens deploy/helm/marketlens \
+          helm lint deploy/helm/marketscope
+          helm template marketscope deploy/helm/marketscope \
             --set api.ingress.enabled=true \
             --set serviceMonitor.enabled=true \
-            --set externalSecrets.enabled=true > /tmp/marketlens-rendered.yaml
+            --set externalSecrets.enabled=true > /tmp/marketscope-rendered.yaml
           python - <<'PY'
           import yaml
-          with open('/tmp/marketlens-rendered.yaml', encoding='utf-8') as handle:
+          with open('/tmp/marketscope-rendered.yaml', encoding='utf-8') as handle:
               documents = [doc for doc in yaml.safe_load_all(handle) if doc]
           assert len(documents) >= 10, len(documents)
           kinds = {doc['kind'] for doc in documents}
@@ -170,4 +170,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build runtime image
-        run: docker build --target runtime -t market-intel-backend:ci .
+        run: docker build --target runtime -t marketscope-backend:ci .

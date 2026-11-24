@@ -65,7 +65,7 @@ def _kafka_servers() -> list[str]:
 
 
 async def test_real_qdrant_tenant_isolation() -> None:
-    collection = f"marketlens_it_{uuid4().hex[:12]}"
+    collection = f"marketscope_it_{uuid4().hex[:12]}"
     settings = make_settings(
         qdrant_url=_qdrant_url(),
         qdrant_local_mode=False,
@@ -133,7 +133,7 @@ async def test_real_s3_object_storage() -> None:
     settings = make_settings(
         object_storage_backend="s3",
         s3_endpoint_url=endpoint,
-        s3_bucket=f"marketlens-it-{uuid4().hex[:10]}",
+        s3_bucket=f"marketscope-it-{uuid4().hex[:10]}",
         s3_access_key=os.getenv("S3_TEST_ACCESS_KEY", "test-key"),
         s3_secret_key=os.getenv("S3_TEST_SECRET_KEY", "test-secret"),
         s3_use_ssl=False,
@@ -156,7 +156,7 @@ async def test_real_s3_object_storage() -> None:
 
 async def test_real_kafka_publish_and_consume() -> None:
     servers = _kafka_servers()
-    topic = f"marketlens-it-{uuid4().hex[:10]}"
+    topic = f"marketscope-it-{uuid4().hex[:10]}"
     admin = AIOKafkaAdminClient(bootstrap_servers=servers)
     await admin.start()
     await admin.create_topics([NewTopic(topic, num_partitions=1, replication_factor=1)])
@@ -202,7 +202,7 @@ async def test_real_kafka_publish_and_consume() -> None:
 
 async def test_real_outbox_dispatches_to_kafka(session_factory, test_database_url) -> None:
     servers = _kafka_servers()
-    topic = f"marketlens-outbox-{uuid4().hex[:10]}"
+    topic = f"marketscope-outbox-{uuid4().hex[:10]}"
     admin = AIOKafkaAdminClient(bootstrap_servers=servers)
     await admin.start()
     await admin.create_topics([NewTopic(topic, num_partitions=1, replication_factor=1)])
@@ -369,7 +369,7 @@ async def test_real_rag_upload_index_search(
         qdrant_collection=collection,
         object_storage_backend="s3",
         s3_endpoint_url=s3_endpoint,
-        s3_bucket=f"marketlens-rag-{uuid4().hex[:10]}",
+        s3_bucket=f"marketscope-rag-{uuid4().hex[:10]}",
         s3_access_key=os.getenv("S3_TEST_ACCESS_KEY", "test-key"),
         s3_secret_key=os.getenv("S3_TEST_SECRET_KEY", "test-secret"),
         s3_use_ssl=False,

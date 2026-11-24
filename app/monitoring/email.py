@@ -34,8 +34,8 @@ def build_email_message(
     message["From"] = sender
     message["To"] = ", ".join(recipients)
     message["Subject"] = _sanitize_header(subject)
-    message["Message-ID"] = f"<{delivery_id}@marketlens.local>"
-    message["X-MarketLens-Delivery"] = delivery_id
+    message["Message-ID"] = f"<{delivery_id}@marketscope.local>"
+    message["X-MarketScope-Delivery"] = delivery_id
     message.set_content(body)
     return message
 

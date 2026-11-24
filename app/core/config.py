@@ -73,7 +73,7 @@ class Settings(BaseSettings):
         hide_input_in_errors=True,
     )
 
-    app_name: str = "Market Intelligence Backend"
+    app_name: str = "MarketScope Backend"
     version: str = __version__
     environment: Environment = "development"
     debug: bool = False
@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     db_pool_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     db_pool_recycle_seconds: int = Field(default=1800, ge=60)
     db_statement_timeout_ms: int = Field(default=30_000, ge=1_000, le=600_000)
-    db_application_name: str = "market-intel-backend"
+    db_application_name: str = "marketscope-backend"
     db_echo: bool = False
 
     # Vector store. Optional until the RAG stage; when configured it is part of
@@ -139,7 +139,7 @@ class Settings(BaseSettings):
 
     # External search and isolated web collection.
     collector_enabled: bool = False
-    collector_user_agent: str = "MarketLensCollector/0.1 (+https://example.invalid/collector)"
+    collector_user_agent: str = "MarketScopeCollector/0.1 (+https://example.invalid/collector)"
     collector_allowed_domains: Annotated[list[str], NoDecode] = Field(default_factory=list)
     collector_blocked_domains: Annotated[list[str], NoDecode] = Field(default_factory=list)
     collector_allow_private_networks: bool = False
@@ -237,12 +237,12 @@ class Settings(BaseSettings):
     # Transactional outbox and Kafka event bus.
     events_outbox_enabled: bool = True
     event_publisher: Literal["log", "kafka"] = "log"
-    event_topic: str = "marketlens.domain-events"
-    event_dead_letter_topic: str = "marketlens.domain-events.dead-letter"
+    event_topic: str = "marketscope.domain-events"
+    event_dead_letter_topic: str = "marketscope.domain-events.dead-letter"
     event_consumer_enabled: bool = False
-    event_consumer_group: str = "marketlens-backend"
+    event_consumer_group: str = "marketscope-backend"
     kafka_bootstrap_servers: Annotated[list[str], NoDecode] = Field(default_factory=list)
-    kafka_client_id: str = "marketlens-events"
+    kafka_client_id: str = "marketscope-events"
     kafka_security_protocol: Literal["PLAINTEXT", "SSL", "SASL_PLAINTEXT", "SASL_SSL"] = "PLAINTEXT"
     kafka_sasl_mechanism: str | None = None
     kafka_sasl_username: str | None = None
@@ -262,7 +262,7 @@ class Settings(BaseSettings):
     temporal_host: str | None = None
     temporal_tls: bool = False
     temporal_namespace: str = "default"
-    temporal_task_queue: str = "marketlens-research"
+    temporal_task_queue: str = "marketscope-research"
     temporal_poll_interval_seconds: float = Field(default=5.0, ge=0.5, le=300)
     temporal_workflow_max_seconds: int = Field(default=86_400, ge=60, le=2_592_000)
     temporal_activity_timeout_seconds: int = Field(default=300, ge=10, le=3_600)
@@ -292,7 +292,7 @@ class Settings(BaseSettings):
     notification_max_concurrent_deliveries: int = Field(default=4, ge=1, le=50)
     notification_allowed_domains: Annotated[list[str], NoDecode] = Field(default_factory=list)
     notification_allow_http: bool = False
-    notification_signing_header: str = "X-MarketLens-Signature"
+    notification_signing_header: str = "X-MarketScope-Signature"
     notification_max_payload_bytes: int = Field(default=65_536, ge=1_024, le=1_000_000)
     # Optional outbound email adapter. Credentials are read only from env/secret
     # manager; recipients are stored encrypted on the notification channel.
@@ -358,7 +358,7 @@ class Settings(BaseSettings):
     # Observability.
     otel_enabled: bool = False
     otel_exporter_otlp_endpoint: str | None = None
-    otel_service_name: str = "market-intel-backend"
+    otel_service_name: str = "marketscope-backend"
     otel_traces_sampler_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
     otel_export_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
     otel_logs_enabled: bool = False
