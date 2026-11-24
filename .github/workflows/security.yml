@@ -51,7 +51,7 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
       - name: Generate SPDX SBOM
-        uses: anchore/sbom-action@v0.18.0
+        uses: anchore/sbom-action@v0.24.3
         with:
           image: marketscope-backend:${{ github.sha }}
           format: spdx-json
