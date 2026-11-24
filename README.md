@@ -197,6 +197,10 @@ curl http://127.0.0.1:8000/health/ready
 - 开发环境默认开放 `/docs`、`/redoc`、`/openapi.json`；production 默认关闭。
 - **所有 `/api/v1/**` 路由默认要求 OIDC Bearer Token。** 未配置 OIDC 时 API 会
   fail closed 返回 401；健康探针仍可用。
+- 真实依赖联调已在本机 Docker PostgreSQL/Qdrant/S3Mock/Redpanda 与 Temporal CLI
+  上执行：常规测试 269 passed，`tests/integration/real` 6 passed；完整 API 的
+  `/health/ready` 同时通过 PostgreSQL、对象存储和 Qdrant 检查。复现方式见
+  [`docs/real-integration.md`](docs/real-integration.md)。
 
 ### Docker 全量运行
 
@@ -731,6 +735,7 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
 - [事件与工作流运行说明](docs/events-and-workflows.md)
 - [监测、通知、协作与配额说明](docs/monitoring-and-collaboration.md)
 - [生产运营手册](docs/operations-runbook.md)
+- [真实依赖联调](docs/real-integration.md)
 - [部署资产说明](deploy/README.md)
 
 ## 已知限制（跨阶段）
@@ -759,8 +764,10 @@ RPO/RTO 均不声称已验证。
 
 - Helm/Terraform 已通过 `helm lint`、`helm template`、`terraform fmt` 和
   `terraform validate`，但未在真实 Kubernetes/EKS/AWS 账户中 apply。
-- 已执行逻辑备份→SHA-256 校验→恢复演练（本地 PostgreSQL），但未执行云 RDS 主备
-  切换/PITR、Kafka/Temporal/Qdrant 故障演练或 k6 压测；RPO/RTO、容量和 SLO 均未实测。
+- 已在本地 Docker PostgreSQL/Qdrant/Redpanda/Temporal CLI 上验证真实连接和核心路径
+  （见 `tests/integration/real`）；仍不是生产多节点/TLS/故障演练。已执行逻辑备份→
+  SHA-256 校验→恢复演练（本地 PostgreSQL），但未执行云 RDS 主备切换/PITR 或 k6 压测；
+  RPO/RTO、容量和 SLO 均未实测。
 - Terraform 只覆盖 RDS/S3/KMS/Secrets Manager；VPC、EKS、MSK、Temporal、Qdrant、
   DNS/TLS、IAM/IRSA 需部署方提供。
 - API `/metrics` 覆盖 HTTP 指标；独立 `app.ops.metrics_exporter` 汇总全局队列深度
@@ -770,9 +777,9 @@ RPO/RTO 均不声称已验证。
 - 保留任务只清理运维事件表；业务数据归档、法务保留、客户删除流程仍是人工治理。
 - pip-audit/Trivy/Syft/cosign 工作流未在本仓库实际运行；无 SaaS 合规认证或渗透测试
   结论。
-- Kafka、Redpanda、Temporal 服务未在本机实际启动；事件/工作流逻辑通过 recording
-  publisher、Temporal test environment 和 fake client 验证，生产需联调 TLS/SASL、
-  consumer group、topic 权限、workflow 命名空间和故障恢复。
+- 本地已启动 Redpanda 和 Temporal dev server，验证 Kafka publish/consume、outbox→
+  Kafka 投递与 Temporal workflow 执行；生产仍需联调 TLS/SASL、consumer group、topic
+  权限、workflow 命名空间、持久化后端和故障恢复。
 - Temporal workflow 只按 root run 生命周期推进；followup run 由 root workflow 的批次
   activity 处理。若 workflow 因 bug/部署终止，需要运维按 workflow ID reset/restart；
   starter 的 processed marker 不会自动重启已失败 workflow。
@@ -850,18 +857,19 @@ RPO/RTO 均不声称已验证。
   恶意文件扫描，解析在受限线程而非独立沙箱进程运行，部署需补充恶意内容检测与资源限制。
 - 关键词检索为 PostgreSQL 全文 + 参数化 ILIKE 回退，未接入专用 BM25/OpenSearch；
   大规模数据需要按部署规模评估索引与重排方案。
-- 本地 MinIO 镜像在部分网络无法匿名拉取；可使用本地文件存储或企业镜像仓库。
-- Qdrant 真实服务在本地未启动（测试使用 qdrant-client 内存模式）；生产需验证真实
-  collection、payload index 与容量/延迟。
-- MinIO/S3 适配器未做真实服务联调（本地 Docker 镜像仓库拉取受限；集成测试使用本地
-  PostgreSQL 容器和文件存储）。S3 适配器使用 boto3 标准接口，部署时需验证桶权限、
-  TLS、加密与生命周期策略。
+- 本地 MinIO 镜像在当前镜像源被拒绝；已用 Adobe S3Mock 对 boto3 S3 适配器做真实
+  HTTP 联调，但未验证 MinIO 特有行为。生产需验证真实 S3/MinIO 桶权限、TLS、加密、
+  生命周期与跨区域复制。
+- Qdrant 1.12.5 真实服务已在本地启动并通过租户隔离/上传索引检索测试；当前 qdrant
+  client 1.20 会打印版本不匹配警告，生产应固定兼容版本的 server/client。
+- S3 适配器已通过真实 S3 API（S3Mock）联调；报告导出写入真实 S3/MinIO 仍未单独演练。
 - 文档索引/删除仍在请求内同步执行并受请求超时限制；采集使用 PostgreSQL 任务队列 +
   独立 worker，但尚未接入 Temporal/Kafka。并发索引/删除与 Qdrant 跨存储一致性采用
   PG 回查、状态租约与可重试状态；阶段 7 已提供 Temporal/outbox，但文档索引/同步删除
   的跨存储事务仍未完成容量/故障演练验证。
-- 报告导出对象写入与 RAG/采集相同的对象存储；本地 MinIO/S3 未做真实服务联调，生产
-  需验证桶权限、TLS、加密、生命周期与导出对象保留策略。
+- 报告导出对象写入与 RAG/采集相同的对象存储；S3 API 已用 S3Mock 验证基础读写，
+  但报告导出链路未单独在真实 S3/MinIO 上演练，生产需验证桶权限、TLS、加密、生命周期
+  与导出对象保留策略。
 - 本地 Compose 数据库用户是超级用户，RLS 的实际强制需要部署时切换为非超级用户；
   阶段 9 提供了部署样例、Prometheus/SLO 规则和备份恢复脚本，但生产角色/权限、密钥
   轮换、SLO、备份恢复与合规认证均需部署方验证，本文不作未验证承诺。
