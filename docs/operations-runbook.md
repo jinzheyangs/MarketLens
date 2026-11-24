@@ -26,6 +26,11 @@
   `notification_channels.encrypted_config`，当前没有自动双密钥轮换。
 - `METRICS_BEARER_TOKEN` 至少 24 字符；生产启用 metrics 但未配置时启动失败。
 - model/search/provider 密钥按最小权限和供应商配额配置。
+- 通知 email 使用 `SMTP_HOST/PORT/USERNAME/PASSWORD/FROM`；收件人加密保存在渠道
+  配置中，SMTP 凭据不入库。生产需配置 SPF/DKIM/DMARC 并处理退信。
+- 租户采集域名策略通过 `GET/PATCH /api/v1/domain-policy` 管理（仅租户管理员）：
+  `allowed_domains` 为空表示不限制，`blocked_domains` 始终优先；入队和搜索结果
+  都会执行该策略。
 
 ## 3. 发布与回滚
 

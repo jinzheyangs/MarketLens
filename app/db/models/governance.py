@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint, Integer, UniqueConstraint
+from uuid import UUID
+
+from sqlalchemy import CheckConstraint, Integer, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -26,3 +29,25 @@ class TenantQuota(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     max_monitor_subscriptions: Mapped[int] = mapped_column(Integer, nullable=False)
     max_concurrent_monitor_runs: Mapped[int] = mapped_column(Integer, nullable=False)
     max_notification_deliveries_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class TenantDomainPolicy(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
+    __tablename__ = "tenant_domain_policies"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_tenant_domain_policies_tenant_id_id"),
+        UniqueConstraint("tenant_id", name="uq_tenant_domain_policies_tenant"),
+    )
+
+    allowed_domains: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    blocked_domains: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    updated_by: Mapped[UUID | None] = mapped_column(nullable=True)

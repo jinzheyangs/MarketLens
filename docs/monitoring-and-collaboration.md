@@ -37,12 +37,16 @@
 
 ### 通知渠道
 
-- 渠道类型：`webhook`（通用 JSON）、`slack`（Incoming Webhook 文本消息）和
-  `log`（开发/审计用途）。三种类型都通过同一套 SSRF 安全 webhook 客户端发送。
-- webhook URL 和可选 HMAC signing secret 使用 Fernet 对称加密后存入
+- 渠道类型：`webhook`（通用 JSON）、`slack`（Incoming Webhook 文本消息）、
+  `email`（SMTP）和 `log`（开发/审计用途）。webhook/Slack 复用 SSRF 安全客户端；
+  email 使用部署方配置的 SMTP relay。
+- webhook URL、签名密钥和 email 收件人使用 Fernet 对称加密后存入
   `notification_channels.encrypted_config`。密钥只从
   `NOTIFICATION_ENCRYPTION_KEY` 环境变量/密钥管理服务读取。
-- API 响应从不返回 URL、secret 或密文；只有渠道名称、类型、启用状态等元数据。
+- API 响应从不返回 URL、收件人、secret 或密文；只有渠道名称、类型、启用状态等元数据。
+- email 只发送 severity/summary/source URL 和“不可信外部内容”提示，不发送网页正文；
+  `Message-ID` 使用 delivery ID，便于接收方幂等处理。SMTP 凭据来自
+  `SMTP_HOST`/`SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_FROM`，不进入渠道密文。
 - 发送前重新执行 URL/DNS 安全校验：仅 HTTPS（开发可显式 `NOTIFICATION_ALLOW_HTTP=true`）、
   仅公网地址、固定已验证 IP 连接、不跟随重定向、限制响应大小和超时。可通过
   `NOTIFICATION_ALLOWED_DOMAINS` 进一步限制目标域后缀。
@@ -125,6 +129,8 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 - `MONITORING_ENABLED=true`
 - `NOTIFICATION_ENCRYPTION_KEY=<Fernet key>`（production 强制）
 - `NOTIFICATION_ALLOW_HTTP=false`（production 强制）
+- email 渠道需要 `SMTP_HOST`、`SMTP_FROM`，可选 `SMTP_USERNAME`/`SMTP_PASSWORD`、
+  `SMTP_STARTTLS`/`SMTP_SSL`；这些凭据只从环境/密钥管理服务读取。
 - 搜索使用既有 `WEB_SEARCH_PROVIDER` / `WEB_SEARCH_API_URL` 配置；
   未配置搜索 Provider 时监测运行会安全失败并记录错误，不会伪造来源。
 - 采集仍由 `python -m app.collector.worker` 执行。
@@ -166,8 +172,11 @@ Provider 和告警 webhook。
 - 调度器基于 PostgreSQL 轮询，不是 Temporal Schedule；大规模订阅（数十万级）需要
   分片或迁移到专用调度服务。
 - 变更检测基于内容哈希和来源 URL，不做 HTML 语义 diff、价格抽取或实体级变更定位。
-- 通知渠道实现 webhook/Slack/log；邮件、企业微信等适配器需要新增受控 egress 实现，
-  不能直接复用任意 URL。Slack 仅发送 severity/summary/source URL 文本，不发送原始正文。
+- 通知渠道实现 webhook/Slack/email/log；企业微信/钉钉等适配器仍需新增受控 egress。
+  Slack/email 仅发送 severity/summary/source URL，不发送原始正文。SMTP 未配置时
+  email 渠道会失败并记录 `email_not_configured`，不会静默丢弃。
+- email 没有退信（bounce）处理、附件、HTML 模板或每租户 SMTP 配置；生产需要接入
+  退信/投诉处理和 SPF/DKIM/DMARC。
 - 已支持单把 previous key 的在线轮换，但没有 KMS 信封加密/密钥版本表；轮换期间
   旧密钥必须保留在进程环境或密钥管理服务中，不能提前删除。
 - 配额是软上限：已开始的运行/任务不会被中断，并发窗口内仍可能短暂超过上限一个单位。

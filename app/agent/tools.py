@@ -33,6 +33,7 @@ from app.collector.service import CollectorServices, filter_search_hits, require
 from app.core.config import Settings
 from app.db.models import ResearchToolCall, SourceSnapshot, WebSource
 from app.db.tenant_scope import tenant_scoped_select
+from app.governance.domain_policies import get_domain_policy
 from app.rag.errors import RagError
 from app.rag.types import DocumentAccessScope
 from app.services.rag import RagServices
@@ -337,14 +338,19 @@ class ResearchToolbox:
             question,
             limit=self._settings.agent_max_evidence_items + self._settings.agent_max_leads,
         )
-        hits = filter_search_hits(
-            raw_hits,
-            settings=self._settings,
-            limit=self._settings.agent_max_evidence_items + self._settings.agent_max_leads,
-        )
         evidence: list[EvidenceItem] = []
         leads: list[SearchLead] = []
         async with self._session_factory() as session:
+            policy = await get_domain_policy(
+                session,
+                tenant_id=self._principal.tenant_id,
+            )
+            hits = filter_search_hits(
+                raw_hits,
+                settings=self._settings,
+                limit=(self._settings.agent_max_evidence_items + self._settings.agent_max_leads),
+                policy=policy,
+            )
             for hit in hits:
                 safe = validate_url(hit.url, self._settings)
                 source = await session.scalar(

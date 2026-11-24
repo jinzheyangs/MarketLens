@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import (
     BaseModel,
     ConfigDict,
+    EmailStr,
     Field,
     SecretStr,
     StringConstraints,
@@ -72,6 +73,7 @@ class NotificationChannelCreate(BaseModel):
     kind: NotificationChannelKind
     url: str | None = Field(default=None, max_length=2_048)
     signing_secret: SecretStr | None = None
+    email_to: list[EmailStr] | None = Field(default=None, max_length=20)
 
 
 class NotificationChannelUpdate(BaseModel):
@@ -79,6 +81,7 @@ class NotificationChannelUpdate(BaseModel):
     url: str | None = Field(default=None, max_length=2_048)
     signing_secret: SecretStr | None = None
     clear_signing_secret: bool = False
+    email_to: list[EmailStr] | None = Field(default=None, max_length=20)
 
     @model_validator(mode="after")
     def _require_change(self) -> NotificationChannelUpdate:
@@ -87,6 +90,7 @@ class NotificationChannelUpdate(BaseModel):
             and self.url is None
             and self.signing_secret is None
             and not self.clear_signing_secret
+            and self.email_to is None
         ):
             raise ValueError("at least one channel field must be updated")
         return self

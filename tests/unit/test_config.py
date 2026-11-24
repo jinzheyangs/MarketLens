@@ -561,3 +561,20 @@ def test_otel_logs_require_endpoint() -> None:
         otel_exporter_otlp_endpoint="https://collector.example.com/v1/traces",
     )
     assert settings.otel_logs_enabled is True
+
+
+def test_smtp_configuration_validation() -> None:
+    with pytest.raises(ValidationError):
+        make_settings(smtp_starttls=True, smtp_ssl=True)
+    with pytest.raises(ValidationError):
+        make_settings(smtp_host="smtp.example.com")
+    with pytest.raises(ValidationError):
+        make_settings(smtp_username="user")
+    settings = make_settings(
+        smtp_host="smtp.example.com",
+        smtp_from="alerts@example.com",
+        smtp_username="user",
+        smtp_password="test-only-password",
+    )
+    assert settings.smtp_host == "smtp.example.com"
+    assert "test-only-password" not in repr(settings)

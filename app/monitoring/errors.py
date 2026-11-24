@@ -24,3 +24,15 @@ class NotificationTargetError(MonitoringError):
     code = "notification_target_rejected"
     safe_message = "The notification target is not permitted."
     retryable = False
+
+
+class EmailNotConfiguredError(MonitoringError):
+    code = "email_not_configured"
+    safe_message = "The email notification channel is not configured."
+    retryable = False
+
+
+class EmailSendError(MonitoringError):
+    code = "email_send_failed"
+    safe_message = "The email notification could not be delivered."
+    retryable = True

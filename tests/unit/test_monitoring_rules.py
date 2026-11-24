@@ -99,3 +99,20 @@ def test_slack_text_escapes_mentions_and_links() -> None:
     assert "<" not in escaped
     assert ">" not in escaped
     assert "&amp;" in escaped
+
+
+def test_email_message_sanitizes_headers_and_sets_delivery_id() -> None:
+    from app.monitoring.email import build_email_message
+
+    message = build_email_message(
+        sender="alerts@example.com",
+        recipients=["ops@example.com"],
+        subject="[MarketLens] summary\r\nBcc: attacker@example.com",
+        body="Body with source https://example.test/page",
+        delivery_id="delivery-123",
+    )
+    assert "\n" not in message["Subject"]
+    assert "\r" not in message["Subject"]
+    assert message["Message-ID"] == "<delivery-123@marketlens.local>"
+    assert message["X-MarketLens-Delivery"] == "delivery-123"
+    assert message.get_content().startswith("Body with source")

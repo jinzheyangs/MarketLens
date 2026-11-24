@@ -67,3 +67,13 @@ class QueueSnapshotRead(BaseModel):
     outbox_failed: int
     consumer_failures_open: int
     consumer_failures_dead_letter: int
+
+
+class DomainPolicyRead(BaseModel):
+    allowed_domains: list[str]
+    blocked_domains: list[str]
+
+
+class DomainPolicyUpdate(BaseModel):
+    allowed_domains: list[str] | None = Field(default=None, max_length=500)
+    blocked_domains: list[str] | None = Field(default=None, max_length=500)

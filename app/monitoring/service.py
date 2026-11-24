@@ -31,6 +31,7 @@ from app.db.models import (
 from app.db.tenant_scope import tenant_scoped_select
 from app.governance.quotas import QuotaResource, ensure_quota
 from app.monitoring.crypto import ChannelSecretCipher
+from app.monitoring.email import EmailSender
 from app.monitoring.enums import (
     MonitorStatus,
     NotificationChannelKind,
@@ -48,6 +49,7 @@ class MonitoringServices:
     session_factory: async_sessionmaker[AsyncSession]
     collector_services: CollectorServices | None
     webhook: SafeWebhookClient
+    email: EmailSender
 
     async def aclose(self) -> None:
         return None
@@ -64,6 +66,7 @@ def build_monitoring_services(
         session_factory=session_factory,
         collector_services=collector_services,
         webhook=SafeWebhookClient(settings),
+        email=EmailSender(settings),
     )
 
 
@@ -81,6 +84,19 @@ def _validate_signing_secret(value: str) -> str:
     return value
 
 
+def _validate_recipients(values: list[str], *, maximum: int) -> list[str]:
+    recipients: list[str] = []
+    for value in values:
+        candidate = value.strip().lower()
+        if not candidate or len(candidate) > 320:
+            raise BadRequestError("email recipients are invalid")
+        if candidate not in recipients:
+            recipients.append(candidate)
+    if not recipients or len(recipients) > maximum:
+        raise BadRequestError(f"email recipients must be 1-{maximum} addresses")
+    return recipients
+
+
 async def create_notification_channel(
     session: AsyncSession,
     *,
@@ -92,19 +108,37 @@ async def create_notification_channel(
     kind: NotificationChannelKind,
     url: str | None,
     signing_secret: str | None,
+    email_to: list[str] | None = None,
 ) -> NotificationChannel:
     encrypted: str | None = None
     if kind in (NotificationChannelKind.WEBHOOK, NotificationChannelKind.SLACK):
+        if email_to is not None:
+            raise BadRequestError("email recipients are not valid for this channel")
         if not url:
             raise BadRequestError("webhook URL is required")
         webhook.validate_target(url)
-        config: dict[str, str] = {"url": url}
+        config: dict[str, object] = {"url": url}
         if signing_secret:
             config["signing_secret"] = _validate_signing_secret(signing_secret)
         try:
             encrypted = ChannelSecretCipher(settings).encrypt(config)
         except ChannelSecretError as exc:
             raise ServiceUnavailableError("Notification encryption is not configured.") from exc
+    elif kind is NotificationChannelKind.EMAIL:
+        if url is not None or signing_secret is not None:
+            raise BadRequestError("email channels do not accept webhook configuration")
+        if not email_to:
+            raise BadRequestError("email recipients are required")
+        recipients = _validate_recipients(
+            email_to,
+            maximum=settings.smtp_max_recipients,
+        )
+        try:
+            encrypted = ChannelSecretCipher(settings).encrypt({"to": recipients})
+        except ChannelSecretError as exc:
+            raise ServiceUnavailableError("Notification encryption is not configured.") from exc
+    elif url is not None or signing_secret is not None or email_to is not None:
+        raise BadRequestError("log channels do not accept delivery configuration")
     channel = NotificationChannel(
         id=uuid4(),
         tenant_id=principal.tenant_id,
@@ -144,6 +178,7 @@ async def update_notification_channel(
     url: str | None,
     signing_secret: str | None,
     clear_signing_secret: bool = False,
+    email_to: list[str] | None = None,
 ) -> NotificationChannel:
     kind = NotificationChannelKind(channel.kind)
     candidate_name = name.strip() if name is not None else None
@@ -152,6 +187,8 @@ async def update_notification_channel(
 
     config_changed = False
     if kind in (NotificationChannelKind.WEBHOOK, NotificationChannelKind.SLACK):
+        if email_to is not None:
+            raise BadRequestError("email recipients are not valid for this channel")
         needs_config = url is not None or signing_secret is not None or clear_signing_secret
         if needs_config:
             if channel.encrypted_config is None:
@@ -176,8 +213,31 @@ async def update_notification_channel(
                 config_changed = True
             if config_changed:
                 channel.encrypted_config = ChannelSecretCipher(settings).encrypt(config)
-    elif url is not None or signing_secret is not None or clear_signing_secret:
-        raise BadRequestError("log channels do not accept webhook configuration")
+    elif kind is NotificationChannelKind.EMAIL:
+        if url is not None or signing_secret is not None or clear_signing_secret:
+            raise BadRequestError("email channels do not accept webhook configuration")
+        if email_to is not None:
+            if channel.encrypted_config is None:
+                raise ConflictError("The channel has no stored configuration.")
+            try:
+                config = ChannelSecretCipher(settings).decrypt(channel.encrypted_config)
+            except ChannelSecretError as exc:
+                raise ConflictError(
+                    "The channel secret cannot be decrypted with the configured keys."
+                ) from exc
+            config["to"] = _validate_recipients(
+                email_to,
+                maximum=settings.smtp_max_recipients,
+            )
+            channel.encrypted_config = ChannelSecretCipher(settings).encrypt(config)
+            config_changed = True
+    elif (
+        url is not None
+        or signing_secret is not None
+        or clear_signing_secret
+        or email_to is not None
+    ):
+        raise BadRequestError("log channels do not accept delivery configuration")
 
     if candidate_name is not None:
         channel.name = candidate_name

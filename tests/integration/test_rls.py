@@ -62,6 +62,7 @@ _RLS_TABLES = {
     "project_comments",
     "approval_requests",
     "tenant_quotas",
+    "tenant_domain_policies",
 }
 
 

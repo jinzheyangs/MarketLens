@@ -8,8 +8,9 @@
 > 阶段 4 搜索/安全采集、阶段 5 LangGraph Supervisor/专业 Agent、阶段 6 证据审查/
 > 报告/审批/导出、阶段 7 transactional outbox/版本化事件/Kafka/Temporal、阶段 8
 > 监测/通知/协作/租户配额，以及阶段 9 的 Helm/Terraform 样例、网络与密钥策略、
-> Prometheus 指标与 SLO 规则、成本归集 API、运维数据保留、备份恢复脚本、供应链
-> 扫描/SBOM/签名和运营手册。详见
+> Prometheus 指标与 SLO 规则、全局队列 exporter、成本归集 API、租户采集域名策略、
+> webhook/Slack/email 通知、运维数据保留、已演练的备份恢复脚本、供应链扫描/SBOM/
+> 签名和运营手册。详见
 > [`docs/operations-runbook.md`](docs/operations-runbook.md)。
 > 部署资产是经过语法/Schema 校验的样例，不代表已对真实云环境或 RPO/RTO 完成验证。
 
@@ -160,6 +161,14 @@ curl -H "Authorization: Bearer <token>" http://127.0.0.1:8000/metrics
 curl -H "Authorization: Bearer <jwt>" \
   "http://127.0.0.1:8000/api/v1/usage/costs?since=2026-01-01T00:00:00Z"
 
+# 租户采集域名策略（tenant admin）
+curl -X PATCH -H "Authorization: Bearer <jwt>" -H "Content-Type: application/json" \
+  -d '{"allowed_domains":["example.com"],"blocked_domains":["internal.example.com"]}' \
+  http://127.0.0.1:8000/api/v1/domain-policy
+
+# 通知密钥轮换（先 dry-run，再 --execute）
+python -m app.ops.notification_keys
+
 # 运维数据保留：默认 dry-run；执行需显式开启
 python -m app.ops.retention
 RETENTION_DESTRUCTIVE_ENABLED=true python -m app.ops.retention --execute
@@ -172,9 +181,9 @@ python -m app.ops.metrics_exporter
 完整发布、回滚、备份恢复、故障演练和 SLO 说明见
 [`docs/operations-runbook.md`](docs/operations-runbook.md)。部署资产是样例；
 Helm/Terraform 已做语法与 `terraform validate`/`helm lint` 校验，但未在真实云环境
-apply。逻辑备份/恢复脚本已在本地 PostgreSQL 上完成备份→校验→恢复演练（42 张表
-恢复成功），但未在云 RDS/PITR 上演练。RPO/RTO 必须由部署方配置并测量，仓库不声称
-合规认证或可用性保证。
+apply。逻辑备份/恢复脚本已在本地 PostgreSQL 上完成备份→校验→恢复演练（43 张表、
+迁移 head `20261123_0011` 恢复成功），但未在云 RDS/PITR 上演练。RPO/RTO 必须由
+部署方配置并测量，仓库不声称合规认证或可用性保证。
 
 ### 5. 验证
 
@@ -734,7 +743,8 @@ RPO/RTO 均不声称已验证。
 - 监测调度使用 PostgreSQL 轮询队列，不是 Temporal Schedule；大规模订阅需要分片或
   专用调度服务。
 - 变更检测只比较来源 URL 与快照内容哈希，不做 HTML 语义 diff、价格/实体抽取。
-- 通知适配器实现 webhook/Slack/log；邮件、企业微信等需要新增受控 egress 实现。
+- 通知适配器实现 webhook/Slack/email/log；企业微信/钉钉等需要新增受控 egress。
+  SMTP 无退信处理、HTML 模板或每租户 relay。
 - 通知投递为 at-least-once，接收方必须按 delivery ID 去重；没有端到端 exactly-once。
 - 渠道支持 PATCH 更新 URL/签名密钥，并支持一把 previous key 的在线轮换
   (`python -m app.ops.notification_keys`)；仍无 KMS 信封加密/密钥版本表。
@@ -798,9 +808,10 @@ RPO/RTO 均不声称已验证。
   响应，禁止 https→http 降级；DNS 解析使用线程 + 总超时，极端 DNS 卡顿可能留下后台线程。
 - URL 规范化只做 scheme/host/默认端口/fragment 处理，不主动移除 tracking 参数；不同
   tracking URL 可能形成不同来源。
-- 域名 allow/block 是部署级配置，尚无租户级域名策略或每租户抓取带宽控制；阶段 8
-  已加入租户级采集任务数量配额，但不控制带宽/并发连接。域名速率是起始速率，不是
-  完整带宽或抓取并发控制。
+- 全局 `COLLECTOR_ALLOWED_DOMAINS`/`COLLECTOR_BLOCKED_DOMAINS` 仍生效；租户管理员可通过
+  `/api/v1/domain-policy` 叠加 allowed/blocked 策略（blocked 优先，入队和搜索结果都会
+  检查）。尚无每租户抓取带宽/并发连接控制；阶段 8 只有采集任务数量配额。域名速率是
+  起始速率，不是完整带宽或抓取并发控制。
 - 来源是可阅读的外部资料与快照，尚未自动进入 RAG 索引；Agent 通过 `source_search`
   读取已采集快照，不执行新的网页抓取。快照是原始不可信内容，任何下游模型必须按数据
   处理。

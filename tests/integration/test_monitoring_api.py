@@ -97,6 +97,29 @@ class RecordingWebhook:
         return WebhookResult(status_code=200)
 
 
+class RecordingEmail:
+    def __init__(self) -> None:
+        self.sent: list[dict[str, object]] = []
+
+    async def send(
+        self,
+        *,
+        recipients: list[str],
+        subject: str,
+        body: str,
+        delivery_id: str,
+    ) -> int:
+        self.sent.append(
+            {
+                "recipients": recipients,
+                "subject": subject,
+                "body": body,
+                "delivery_id": delivery_id,
+            }
+        )
+        return 250
+
+
 async def _channel(
     client: AsyncClient,
     seed: Seed,
@@ -206,6 +229,25 @@ async def test_monitoring_channel_and_subscription_lifecycle(
     assert slack_channel.status_code == 201, slack_channel.text
     assert slack_channel.json()["kind"] == "slack"
     assert "url" not in slack_channel.json()
+
+    email_channel = await client.post(
+        f"/api/v1/workspaces/{seed.workspace_a}/notification-channels",
+        headers=_auth(seed.tokens["workspace_admin_a"]),
+        json={
+            "name": "ops-email",
+            "kind": "email",
+            "email_to": ["ops@example.com"],
+        },
+    )
+    assert email_channel.status_code == 201, email_channel.text
+    assert email_channel.json()["kind"] == "email"
+    assert "email_to" not in email_channel.json()
+    missing_recipients = await client.post(
+        f"/api/v1/workspaces/{seed.workspace_a}/notification-channels",
+        headers=_auth(seed.tokens["workspace_admin_a"]),
+        json={"name": "bad-email", "kind": "email"},
+    )
+    assert missing_recipients.status_code == 400
 
     forbidden_channel = await client.post(
         f"/api/v1/workspaces/{seed.workspace_a}/notification-channels",
@@ -531,10 +573,13 @@ async def test_monitoring_worker_detects_change_and_delivers(
     assert isinstance(services, MonitoringServices)
     recording_webhook = RecordingWebhook()
     services.webhook = recording_webhook  # type: ignore[assignment]
+    recording_email = RecordingEmail()
+    services.email = recording_email  # type: ignore[assignment]
 
     now = datetime.now(UTC)
     subscription_id = uuid4()
     channel_id = uuid4()
+    email_channel_id = uuid4()
     source_id = uuid4()
     snapshot_id = uuid4()
     task_id = uuid4()
@@ -558,6 +603,20 @@ async def test_monitoring_worker_detects_change_and_delivers(
                 )
             )
             session.add(
+                NotificationChannel(
+                    id=email_channel_id,
+                    tenant_id=seed.tenant_a,
+                    workspace_id=seed.workspace_a,
+                    name="worker-email-channel",
+                    kind="email",
+                    encrypted_config=ChannelSecretCipher(settings).encrypt(
+                        {"to": ["ops@example.com"]}
+                    ),
+                    enabled=True,
+                    created_by=seed.user_ids["workspace_admin_a"],
+                )
+            )
+            session.add(
                 MonitorSubscription(
                     id=subscription_id,
                     tenant_id=seed.tenant_a,
@@ -573,13 +632,21 @@ async def test_monitoring_worker_detects_change_and_delivers(
                 )
             )
             await session.flush()
-            session.add(
-                MonitorAlertRule(
-                    tenant_id=seed.tenant_a,
-                    subscription_id=subscription_id,
-                    channel_id=channel_id,
-                    min_severity="low",
-                )
+            session.add_all(
+                [
+                    MonitorAlertRule(
+                        tenant_id=seed.tenant_a,
+                        subscription_id=subscription_id,
+                        channel_id=channel_id,
+                        min_severity="low",
+                    ),
+                    MonitorAlertRule(
+                        tenant_id=seed.tenant_a,
+                        subscription_id=subscription_id,
+                        channel_id=email_channel_id,
+                        min_severity="low",
+                    ),
+                ]
             )
             session.add(
                 WebSource(
@@ -655,7 +722,7 @@ async def test_monitoring_worker_detects_change_and_delivers(
     scheduled, runs, deliveries = await worker.run_once(tenant_ids=[seed.tenant_a])
     assert scheduled == 0
     assert runs == 1
-    assert deliveries == 1
+    assert deliveries == 2
 
     with tenant_context(seed.tenant_a):
         async with seed.session_factory() as session:
@@ -672,24 +739,37 @@ async def test_monitoring_worker_detects_change_and_delivers(
             )
             assert len(changes) == 1
             assert changes[0].change_type == "new_source"
-            delivery = await session.scalar(
-                select(NotificationDelivery).where(
-                    NotificationDelivery.subscription_id == subscription_id
-                )
+            deliveries = list(
+                (
+                    await session.scalars(
+                        select(NotificationDelivery).where(
+                            NotificationDelivery.subscription_id == subscription_id
+                        )
+                    )
+                ).all()
             )
-            assert delivery is not None
-            assert delivery.status == "sent"
-            # The webhook URL and signing secret must never be stored in the
-            # delivery payload that leaves the system.
-            assert "signing_secret" not in delivery.payload
-            assert delivery.payload["untrusted"] is True
-            assert delivery.payload["source_url"] == url
+            assert len(deliveries) == 2
+            assert {delivery.status for delivery in deliveries} == {"sent"}
+            for delivery in deliveries:
+                # The webhook URL/signing secret and email recipients must never
+                # be stored in the outbound payload.
+                assert "signing_secret" not in delivery.payload
+                assert "to" not in delivery.payload
+                assert delivery.payload["untrusted"] is True
+                assert delivery.payload["source_url"] == url
 
     assert len(recording_webhook.bodies) == 1
     slack_body = json.loads(recording_webhook.bodies[0])
     assert "text" in slack_body
     assert url in slack_body["text"]
     assert "signing_secret" not in slack_body
+
+    assert len(recording_email.sent) == 1
+    email = recording_email.sent[0]
+    assert email["recipients"] == ["ops@example.com"]
+    assert "MarketLens" in str(email["subject"])
+    assert url in str(email["body"])
+    assert email["delivery_id"]
 
 
 async def test_notification_key_rotation_rewrites_channel_secrets(

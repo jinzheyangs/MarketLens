@@ -51,6 +51,7 @@ def severity_rank(value: str) -> int:
 class NotificationChannelKind(StrEnum):
     WEBHOOK = "webhook"
     SLACK = "slack"
+    EMAIL = "email"
     LOG = "log"
 
 

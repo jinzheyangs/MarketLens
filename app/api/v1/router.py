@@ -14,6 +14,7 @@ from app.api.v1 import (
     collaboration,
     collector,
     documents,
+    domain_policies,
     events,
     me,
     monitoring,
@@ -47,5 +48,6 @@ router.include_router(collaboration.router)
 router.include_router(quotas.router)
 router.include_router(usage.router)
 router.include_router(operations.router)
+router.include_router(domain_policies.router)
 router.include_router(events.router)
 router.include_router(audit.router)

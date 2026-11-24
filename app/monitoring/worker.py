@@ -43,6 +43,7 @@ from app.db.rls import install_rls_context
 from app.db.session import create_engine, create_session_factory
 from app.db.tenant_guard import install_tenant_guard
 from app.db.tenant_scope import tenant_scoped_select
+from app.governance.domain_policies import get_domain_policy
 from app.governance.quotas import QuotaResource, ensure_quota
 from app.monitoring.crypto import ChannelSecretCipher
 from app.monitoring.enums import (
@@ -55,6 +56,8 @@ from app.monitoring.enums import (
 )
 from app.monitoring.errors import (
     ChannelSecretError,
+    EmailNotConfiguredError,
+    EmailSendError,
     NotificationSendError,
     NotificationTargetError,
 )
@@ -378,10 +381,16 @@ class MonitoringWorker:
             subscription.query,
             limit=self._settings.monitoring_max_sources_per_run,
         )
+        async with self._services.session_factory() as session:
+            policy = await get_domain_policy(
+                session,
+                tenant_id=subscription.tenant_id,
+            )
         filtered = filter_search_hits(
             hits,
             settings=self._settings,
             limit=self._settings.monitoring_max_sources_per_run,
+            policy=policy,
         )
         return [hit.url for hit in filtered]
 
@@ -850,6 +859,7 @@ class MonitoringWorker:
                 if channel.kind in (
                     NotificationChannelKind.WEBHOOK.value,
                     NotificationChannelKind.SLACK.value,
+                    NotificationChannelKind.EMAIL.value,
                 ):
                     try:
                         config = ChannelSecretCipher(self._settings).decrypt(
@@ -899,6 +909,53 @@ class MonitoringWorker:
                         extra={"context": {"delivery_id": str(delivery.id)}},
                     )
                     response_status = 200
+                elif channel.kind == NotificationChannelKind.EMAIL.value:
+                    raw_recipients = config.get("to")
+                    recipients: list[str] = (
+                        [str(value) for value in raw_recipients]
+                        if isinstance(raw_recipients, list)
+                        else []
+                    )
+                    if not recipients:
+                        await self._finish_delivery(
+                            delivery_id,
+                            success=False,
+                            code="email_recipients_missing",
+                            retryable=False,
+                        )
+                        return
+                    severity = str(payload.get("severity", "info")).upper()
+                    summary = str(payload.get("summary", ""))
+                    source_url = str(payload.get("source_url") or "")
+                    email_body = (
+                        f"{summary}\n\n"
+                        f"Source: {source_url}\n\n"
+                        "This notification contains untrusted external content. "
+                        "Verify the source before acting."
+                    )
+                    try:
+                        response_status = await self._services.email.send(
+                            recipients=recipients,
+                            subject=f"[MarketLens][{severity}] {summary[:120]}",
+                            body=email_body,
+                            delivery_id=str(delivery.id),
+                        )
+                    except EmailNotConfiguredError:
+                        await self._finish_delivery(
+                            delivery_id,
+                            success=False,
+                            code="email_not_configured",
+                            retryable=False,
+                        )
+                        return
+                    except EmailSendError:
+                        await self._finish_delivery(
+                            delivery_id,
+                            success=False,
+                            code="email_send_failed",
+                            retryable=True,
+                        )
+                        return
                 else:
                     headers = {
                         "X-MarketLens-Delivery": str(delivery.id),

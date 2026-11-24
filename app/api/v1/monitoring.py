@@ -145,6 +145,9 @@ async def post_notification_channel(
         signing_secret=(
             payload.signing_secret.get_secret_value() if payload.signing_secret else None
         ),
+        email_to=(
+            [str(value) for value in payload.email_to] if payload.email_to is not None else None
+        ),
     )
     return NotificationChannelRead.model_validate(channel)
 
@@ -190,6 +193,9 @@ async def patch_notification_channel(
             else None
         ),
         clear_signing_secret=payload.clear_signing_secret,
+        email_to=(
+            [str(value) for value in payload.email_to] if payload.email_to is not None else None
+        ),
     )
     return NotificationChannelRead.model_validate(channel)
 

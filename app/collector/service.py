@@ -27,6 +27,7 @@ from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError, ServiceUnavailableError
 from app.db.models import CollectionTask, SourceSnapshot, WebSource
 from app.db.tenant_scope import tenant_scoped_select
+from app.governance.domain_policies import DomainPolicy, get_domain_policy
 from app.governance.quotas import QuotaResource, ensure_quota
 from app.rag.errors import ObjectStorageError
 from app.rag.storage import ObjectStorage, build_object_storage
@@ -148,6 +149,14 @@ async def enqueue_tasks(
         if safe.url not in seen:
             seen.add(safe.url)
             safe_urls.append(safe)
+
+    policy = await get_domain_policy(
+        session,
+        tenant_id=principal.tenant_id,
+    )
+    for safe in safe_urls:
+        if not policy.allows(safe.host):
+            raise BlockedTargetError("The target domain is blocked by tenant policy.")
 
     await ensure_quota(
         session,
@@ -369,6 +378,7 @@ def filter_search_hits(
     *,
     settings: Settings,
     limit: int,
+    policy: DomainPolicy | None = None,
 ) -> list[SearchHit]:
     filtered: list[SearchHit] = []
     seen: set[str] = set()
@@ -376,6 +386,8 @@ def filter_search_hits(
         try:
             safe = validate_url(hit.url, settings)
         except (InvalidTargetError, BlockedTargetError):
+            continue
+        if policy is not None and not policy.allows(safe.host):
             continue
         if safe.url in seen:
             continue

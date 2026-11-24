@@ -40,6 +40,7 @@ from app.core.errors import (
     ServiceUnavailableError,
 )
 from app.db.models import CollectionTask, Organization, Project, Workspace
+from app.governance.domain_policies import get_domain_policy
 from app.schemas.collector import (
     CollectionTaskCreate,
     CollectionTaskRead,
@@ -139,10 +140,12 @@ async def web_search(
         )
     except SearchProviderError as exc:
         _map_collector_error(exc)
+    policy = await get_domain_policy(session, tenant_id=principal.tenant_id)
     filtered = filter_search_hits(
         hits,
         settings=settings,
         limit=min(payload.limit, settings.web_search_max_results),
+        policy=policy,
     )
     return WebSearchResponse(
         provider=settings.web_search_provider,

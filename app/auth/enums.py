@@ -128,6 +128,8 @@ class Permission(StrEnum):
     APPROVAL_DECIDE = "approval:decide"
     QUOTA_READ = "quota:read"
     QUOTA_MANAGE = "quota:manage"
+    DOMAIN_POLICY_READ = "domain_policy:read"
+    DOMAIN_POLICY_MANAGE = "domain_policy:manage"
 
     USER_READ = "user:read"
     USER_MANAGE = "user:manage"
@@ -197,5 +199,6 @@ class AuditAction(StrEnum):
     APPROVAL_DECIDED = "approval.decided"
     APPROVAL_CANCELED = "approval.canceled"
     QUOTA_UPDATED = "quota.updated"
+    DOMAIN_POLICY_UPDATED = "domain_policy.updated"
     RETENTION_PURGED = "retention.purged"
     AUTHORIZATION_DENIED = "authorization.denied"

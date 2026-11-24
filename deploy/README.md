@@ -28,6 +28,7 @@ Create a Kubernetes Secret (or ExternalSecret) with at least:
 | `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD`, `KAFKA_SSL_CAFILE` | Production requires TLS/SASL |
 | `AGENT_API_KEY` | Model gateway credential when `AGENT_PROVIDER=http` |
 | `WEB_SEARCH_API_KEY` | Search provider credential |
+| `SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` | Optional email notification relay; recipients stay encrypted in the channel config |
 
 Never commit a populated `values.yaml`, tfvars, or Secret. The chart references
 an existing Secret by name only.

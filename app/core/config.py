@@ -14,7 +14,14 @@ from functools import lru_cache
 from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
 
-from pydantic import Field, PostgresDsn, SecretStr, field_validator, model_validator
+from pydantic import (
+    EmailStr,
+    Field,
+    PostgresDsn,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app import __version__
@@ -287,6 +294,17 @@ class Settings(BaseSettings):
     notification_allow_http: bool = False
     notification_signing_header: str = "X-MarketLens-Signature"
     notification_max_payload_bytes: int = Field(default=65_536, ge=1_024, le=1_000_000)
+    # Optional outbound email adapter. Credentials are read only from env/secret
+    # manager; recipients are stored encrypted on the notification channel.
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, ge=1, le=65_535)
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = Field(default=None, repr=False)
+    smtp_from: EmailStr | None = None
+    smtp_starttls: bool = True
+    smtp_ssl: bool = False
+    smtp_timeout_seconds: float = Field(default=15.0, gt=0, le=120)
+    smtp_max_recipients: int = Field(default=20, ge=1, le=100)
     quota_default_max_active_research_runs: int = Field(default=10, ge=1, le=10_000)
     quota_default_max_pending_collection_tasks: int = Field(default=100, ge=1, le=100_000)
     quota_default_max_monitor_subscriptions: int = Field(default=20, ge=1, le=10_000)
@@ -370,6 +388,7 @@ class Settings(BaseSettings):
         "notification_encryption_key",
         "notification_previous_encryption_key",
         "metrics_bearer_token",
+        "smtp_password",
         mode="before",
     )
     @classmethod
@@ -483,6 +502,20 @@ class Settings(BaseSettings):
         if not _HEADER_NAME_PATTERN.fullmatch(value):
             raise ValueError("NOTIFICATION_SIGNING_HEADER must be a valid header name")
         return value
+
+    @field_validator("smtp_host")
+    @classmethod
+    def _validate_smtp_host(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        candidate = value.strip().lower()
+        if (
+            not candidate
+            or any(character in candidate for character in "/\\@ \t\r\n:")
+            or len(candidate) > 253
+        ):
+            raise ValueError("SMTP_HOST must be a bare hostname without a scheme")
+        return candidate
 
     @field_validator("metrics_path")
     @classmethod
@@ -945,6 +978,12 @@ class Settings(BaseSettings):
                     raise ValueError(
                         "METRICS_BEARER_TOKEN must be at least 24 characters in production"
                     )
+        if self.smtp_starttls and self.smtp_ssl:
+            raise ValueError("SMTP_STARTTLS and SMTP_SSL cannot both be enabled")
+        if self.smtp_host is not None and self.smtp_from is None:
+            raise ValueError("SMTP_HOST requires SMTP_FROM")
+        if (self.smtp_username is None) != (self.smtp_password is None):
+            raise ValueError("SMTP_USERNAME and SMTP_PASSWORD must be configured together")
         return self
 
     @property

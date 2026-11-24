@@ -10,7 +10,7 @@ from app.db.models.collector import (
 )
 from app.db.models.document import Document, DocumentChunk, DocumentVersion
 from app.db.models.events import DomainEvent, EventConsumerFailure, ProcessedEvent
-from app.db.models.governance import TenantQuota
+from app.db.models.governance import TenantDomainPolicy, TenantQuota
 from app.db.models.membership import (
     OrganizationMembership,
     ProjectMembership,
@@ -84,6 +84,7 @@ __all__ = [
     "ResearchToolCall",
     "SourceSnapshot",
     "Tenant",
+    "TenantDomainPolicy",
     "TenantQuota",
     "User",
     "WebSource",
