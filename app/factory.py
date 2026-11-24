@@ -15,12 +15,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.agent.service import AgentServices, build_agent_services
 from app.api.error_handlers import register_exception_handlers
 from app.api.health import router as health_router
+from app.api.metrics import build_metrics_router
 from app.api.v1.router import router as api_v1_router
 from app.auth.middleware import AuthenticationMiddleware
 from app.auth.oidc import build_token_verifier
 from app.collector.service import CollectorServices, build_collector_services
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
+from app.core.metrics import Metrics, MetricsMiddleware
 from app.core.middleware import (
     AccessLogMiddleware,
     BodySizeLimitMiddleware,
@@ -135,7 +137,11 @@ def _build_lifespan(
     return lifespan
 
 
-def _configure_middleware(app: FastAPI, settings: Settings) -> None:
+def _configure_middleware(
+    app: FastAPI,
+    settings: Settings,
+    metrics: Metrics | None,
+) -> None:
     # Added innermost first; Starlette executes the last-added middleware first.
     app.add_middleware(
         AuthenticationMiddleware,
@@ -172,6 +178,12 @@ def _configure_middleware(app: FastAPI, settings: Settings) -> None:
         enable_hsts=settings.environment == "production",
     )
     app.add_middleware(AccessLogMiddleware)
+    if metrics is not None:
+        app.add_middleware(
+            MetricsMiddleware,
+            metrics=metrics,
+            ignored_paths=[settings.metrics_path],
+        )
     app.add_middleware(
         RequestContextMiddleware,
         header_name=settings.request_id_header,
@@ -198,11 +210,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = configured
     app.state.token_verifier = build_token_verifier(configured)
+    metrics = Metrics(configured) if configured.metrics_enabled else None
+    app.state.metrics = metrics
 
     register_exception_handlers(app)
     app.include_router(health_router)
+    if metrics is not None:
+        app.include_router(build_metrics_router(configured))
     app.include_router(api_v1_router, prefix=configured.api_prefix)
-    _configure_middleware(app, configured)
+    _configure_middleware(app, configured, metrics)
 
     if configured.otel_enabled:
         app.state.telemetry = setup_telemetry(app, configured)

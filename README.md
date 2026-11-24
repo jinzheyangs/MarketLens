@@ -3,14 +3,15 @@
 面向企业团队的市场情报与调研平台后端。最终架构与交付阶段见
 [`docs/项目蓝图.md`](docs/项目蓝图.md)。
 
-> **当前实现范围：阶段 8「企业监测、协作与租户配额」。**
+> **当前实现范围：阶段 9「生产部署与运营治理」。**
 > 已完成：阶段 1 工程底座、阶段 2 身份/租户/RBAC/ABAC/审计、阶段 3 资料摄取/RAG、
 > 阶段 4 搜索/安全采集、阶段 5 LangGraph Supervisor/专业 Agent、阶段 6 证据审查/
-> 报告/审批/导出、阶段 7 的 transactional outbox/版本化事件/Kafka/Temporal，以及
-> 阶段 8 的监测订阅与调度、内容变更检测、加密通知渠道、安全 webhook 投递、租户
-> 配额、项目评论和协作审批节点。详见
-> [`docs/monitoring-and-collaboration.md`](docs/monitoring-and-collaboration.md)。
-> 尚未实现：生产运营治理（阶段 9）等。
+> 报告/审批/导出、阶段 7 transactional outbox/版本化事件/Kafka/Temporal、阶段 8
+> 监测/通知/协作/租户配额，以及阶段 9 的 Helm/Terraform 样例、网络与密钥策略、
+> Prometheus 指标与 SLO 规则、成本归集 API、运维数据保留、备份恢复脚本、供应链
+> 扫描/SBOM/签名和运营手册。详见
+> [`docs/operations-runbook.md`](docs/operations-runbook.md)。
+> 部署资产是经过语法/Schema 校验的样例，不代表已对真实云环境或 RPO/RTO 完成验证。
 
 ## 技术栈
 
@@ -23,7 +24,8 @@
 - LangGraph 1.x（MIT；Supervisor + 专业 Agent、并行 fan-out、应用级持久检查点）
 - 报告导出：Markdown + DOCX（python-docx，MIT）；PDF/表格导出尚未实现
 - Transactional outbox、Kafka（aiokafka）、Temporal Python SDK
-- OpenTelemetry（可选，OTLP/HTTP）
+- OpenTelemetry（可选，OTLP/HTTP）、Prometheus 指标、SLO 告警
+- Helm、Terraform、k6、备份/恢复脚本、Trivy/Syft/cosign CI 供应链扫描
 - pytest / pytest-asyncio、Ruff、mypy（strict）、GitHub Actions
 - Docker / Docker Compose
 
@@ -36,7 +38,7 @@ app/
   cli.py               # 平台运维 Bootstrap（创建租户/首个租户管理员）
   api/                 # 健康探针、统一错误、v1 业务路由
   auth/                # OIDC/JWT 校验、租户上下文中间件、Principal、RBAC/ABAC
-  core/                # 配置、上下文、错误、日志、HTTP 中间件、trace
+  core/                # 配置、上下文、错误、日志、HTTP 中间件、trace、Prometheus metrics
   db/                  # Base、模型、租户守卫、RLS、引擎
   rag/                 # 解析、分块、embedding、对象存储、Qdrant、混合检索
   collector/           # 搜索 Provider、SSRF 安全抓取、robots、worker、来源/快照
@@ -46,14 +48,21 @@ app/
   workflow/            # Temporal workflow、activities、starter、worker 模式
   monitoring/          # 监测调度、变更检测、加密通知渠道、SSRF 安全 webhook
   collaboration/       # 项目评论与协作审批节点
-  governance/          # 租户配额与 advisory lock 强制
+  governance/          # 租户配额、成本归集与 advisory lock 强制
+  ops/                 # 受控运维数据保留任务
   schemas/             # API schema
   services/            # 租户/成员/用户/审计/文档/RAG 编排
 alembic/               # 迁移
+deploy/helm/           # Helm chart（API/worker/迁移 Job/网络策略/SLO）
+deploy/terraform/      # AWS RDS/S3/KMS/Secrets Manager 样例
+deploy/observability/  # Prometheus 规则、Grafana 看板、OTel Collector
+deploy/scripts/        # PostgreSQL 备份/校验/恢复
+deploy/load/           # k6 负载/故障演练
 tests/unit/            # 无需 PostgreSQL（含内存 Qdrant、解析/分块/embedding）
 tests/integration/     # 真实 PostgreSQL：API、RLS、迁移、CLI、RAG
 docs/adr/              # 架构决策记录
 docs/engineering-standards.md
+docs/operations-runbook.md
 docker/postgres/init/  # 本地测试库初始化
 ```
 
@@ -132,7 +141,37 @@ DB queue，不要求 Kafka/Temporal 即可启动；设置 `EVENT_PUBLISHER=kafka
 `.env.example` 默认使用 `AGENT_PROVIDER=deterministic` 的本地确定性模型契约桩，
 只用于开发和接口验证；生产必须配置 `AGENT_PROVIDER=http` 与受控 https 模型网关。
 
-### 4. 验证
+### 4. 生产部署与运营
+
+```bash
+# Helm 样例（需要真实集群、Ingress、ExternalSecret 与托管依赖）
+helm lint deploy/helm/marketlens
+helm upgrade --install marketlens deploy/helm/marketlens -n marketlens --atomic
+
+# Terraform 样例（RDS/S3/KMS/Secrets Manager；先配置远程 state）
+cd deploy/terraform && terraform init -backend=false && terraform validate
+
+# 指标与 SLO
+METRICS_ENABLED=true METRICS_BEARER_TOKEN=<至少24字符> \
+  uvicorn app.main:app --host 0.0.0.0 --port 8000
+curl -H "Authorization: Bearer <token>" http://127.0.0.1:8000/metrics
+
+# 成本归集（租户管理员）
+curl -H "Authorization: Bearer <jwt>" \
+  "http://127.0.0.1:8000/api/v1/usage/costs?since=2026-01-01T00:00:00Z"
+
+# 运维数据保留：默认 dry-run；执行需显式开启
+python -m app.ops.retention
+RETENTION_DESTRUCTIVE_ENABLED=true python -m app.ops.retention --execute
+```
+
+完整发布、回滚、备份恢复、故障演练和 SLO 说明见
+[`docs/operations-runbook.md`](docs/operations-runbook.md)。部署资产是样例；
+Helm/Terraform 已做语法与 `terraform validate`/`helm lint` 校验，但未在真实云环境
+apply，也未执行恢复演练。RPO/RTO 必须由部署方配置并测量，仓库不声称合规认证或
+可用性保证。
+
+### 5. 验证
 
 ```bash
 curl http://127.0.0.1:8000/health/live
@@ -362,8 +401,8 @@ market-intel provision-user \
   Review/export 由 `agent` worker 执行，因此需要 `AGENT_ENABLED=true` 并启动该 worker。
 - **已知 ACL 边界**：报告继承 root run 的 workspace/project 读取 ACL，不逐条重鉴权
   原始来源；项目成员可能看到 root research run 中已授权证据的摘录。原始来源删除后，
-  review 会标记 citation invalid，但既有报告版本和审计记录保留。阶段 8/9 可增加引用级
-  ACL 与数据保留策略。
+  review 会标记 citation invalid，但既有报告版本和审计记录保留。后续可增加引用级
+  ACL 与业务数据保留策略。
 
 ## 持久工作流与事件体系（阶段 7）
 
@@ -669,16 +708,50 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
 - [ADR-0014：不可变报告版本、人工审批与导出任务](docs/adr/0014-report-versions-exports.md)
 - [ADR-0015：Transactional outbox、Kafka 事件与消费幂等](docs/adr/0015-transactional-outbox-events.md)
 - [ADR-0016：Temporal 研究工作流与 DB 队列回退](docs/adr/0016-temporal-research-workflow.md)
+- [ADR-0017：监测、加密通知与租户配额](docs/adr/0017-monitoring-notifications-quotas.md)
+- [ADR-0018：生产运营、SLO 与数据生命周期边界](docs/adr/0018-production-operations.md)
 - [ADR 模板](docs/adr/0000-template.md)
 - [工程规范](docs/engineering-standards.md)
 - [Agent 模型网关契约](docs/agent-model-gateway.md)
 - [证据审查与报告交付操作说明](docs/report-delivery.md)
 - [事件与工作流运行说明](docs/events-and-workflows.md)
+- [监测、通知、协作与配额说明](docs/monitoring-and-collaboration.md)
+- [生产运营手册](docs/operations-runbook.md)
+- [部署资产说明](deploy/README.md)
 
-## 本阶段限制 / 阶段 8 依赖
+## 已知限制（跨阶段）
 
-- 已实现阶段 7 的 outbox/Kafka 事件与 Temporal research lifecycle；尚未实现企业监测
-  与协作（阶段 8）和生产运营治理（阶段 9）。
+以下限制按当前实现真实记录；未实际启动的云服务、未执行的演练和未测量的
+RPO/RTO 均不声称已验证。
+
+### 阶段 8（监测与协作）
+
+- 监测调度使用 PostgreSQL 轮询队列，不是 Temporal Schedule；大规模订阅需要分片或
+  专用调度服务。
+- 变更检测只比较来源 URL 与快照内容哈希，不做 HTML 语义 diff、价格/实体抽取。
+- 通知适配器只有 webhook/log；邮件、企业微信、Slack 等需要新增受控 egress 实现。
+- 通知投递为 at-least-once，接收方必须按 delivery ID 去重；没有端到端 exactly-once。
+- 渠道密钥由单个 Fernet key 加密，无自动多密钥轮换或 KMS 信封加密。
+- 配额是软上限：已开始的运行/任务不会被中断，并发边界可能短暂超限一个单位。
+- 审批节点不驱动报告版本状态机，也不发送站内通知；报告正式审批仍走 checksum 校验
+  的管理员接口。
+- 评论只有单层父子关系、无富文本/附件/@提及/实时推送；正文上限 5000 字符。
+- 查询/变更 API 只提供订阅级分页，没有跨租户/跨工作区聚合搜索。
+
+### 阶段 9（生产运营）
+
+- Helm/Terraform 已通过 `helm lint`、`helm template`、`terraform fmt` 和
+  `terraform validate`，但未在真实 Kubernetes/EKS/AWS 账户中 apply。
+- 未执行 PostgreSQL 主备切换、Kafka/Temporal/Qdrant 故障演练、k6 压测或备份恢复
+  演练；RPO/RTO、容量和 SLO 均未实测。
+- Terraform 只覆盖 RDS/S3/KMS/Secrets Manager；VPC、EKS、MSK、Temporal、Qdrant、
+  DNS/TLS、IAM/IRSA 需部署方提供。
+- `/metrics` 只覆盖 API HTTP 指标；worker 队列/租约/积压指标未暴露，worker 告警依赖
+  Kubernetes Deployment 状态。
+- Prometheus 规则和 Grafana 看板未在真实 Prometheus/Thanos/Grafana 栈中执行。
+- 保留任务只清理运维事件表；业务数据归档、法务保留、客户删除流程仍是人工治理。
+- pip-audit/Trivy/Syft/cosign 工作流未在本仓库实际运行；无 SaaS 合规认证或渗透测试
+  结论。
 - Kafka、Redpanda、Temporal 服务未在本机实际启动；事件/工作流逻辑通过 recording
   publisher、Temporal test environment 和 fake client 验证，生产需联调 TLS/SASL、
   consumer group、topic 权限、workflow 命名空间和故障恢复。
@@ -699,10 +772,10 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
   它只作为强制 citation 校验之上的降级/标记机制，不能宣称自动事实核查已完成。
 - 报告版本/审查/导出仍由 PostgreSQL lease 队列 + review/export 安全循环执行；Temporal
   生命周期 workflow 已覆盖 research/review/export batch，但细粒度 report/export 状态
-  机仍在 DB，不是独立 Temporal workflow。跨租户公平性、死信取消和容量治理属于阶段 9。
+  机仍在 DB，不是独立 Temporal workflow。跨租户公平性、死信取消和容量治理仍未实现。
 - run/finding/review/report 的读取 ACL 是 root run 的 workspace/project ACL；报告中的
   证据摘录会提供给有报告读权限的项目成员，不会对每个读者逐条重新鉴权原始来源。
-  引用级 ACL 仍需阶段 8/9 配合数据治理补齐。
+  引用级 ACL 仍需后续数据治理补齐。
 - 报告导出只支持 Markdown 与 DOCX；PDF、表格/图表、Word 模板、数字签名和外部 DMS
   集成未实现。DOCX 由 python-docx 生成，未在 Microsoft Word/Office 365 全版本做兼容性
   回归。
@@ -717,8 +790,9 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
   响应，禁止 https→http 降级；DNS 解析使用线程 + 总超时，极端 DNS 卡顿可能留下后台线程。
 - URL 规范化只做 scheme/host/默认端口/fragment 处理，不主动移除 tracking 参数；不同
   tracking URL 可能形成不同来源。
-- 域名 allow/block 是部署级配置，尚无租户级域名策略、每租户并发/带宽配额；阶段 8/9
-  补齐。域名速率是起始速率，不是完整带宽或抓取并发控制。
+- 域名 allow/block 是部署级配置，尚无租户级域名策略或每租户抓取带宽控制；阶段 8
+  已加入租户级采集任务数量配额，但不控制带宽/并发连接。域名速率是起始速率，不是
+  完整带宽或抓取并发控制。
 - 来源是可阅读的外部资料与快照，尚未自动进入 RAG 索引；Agent 通过 `source_search`
   读取已采集快照，不执行新的网页抓取。快照是原始不可信内容，任何下游模型必须按数据
   处理。
@@ -727,11 +801,12 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
   真实商业/内部模型服务。run 记录创建时的模型名与图版本，worker 配置不一致会
   使 run 失败；模型/图升级时应先排空 pending/paused run 或明确重跑。模型网关会接收
   授权范围内的证据文本，当前未实现 PII 自动脱敏、供应商数据保留策略或跨租户模型
-  缓存隔离；这些属于部署治理与阶段 9。
+  缓存隔离；这些仍属于部署治理缺口。
 - Agent 工具选择采用有界、固定的只读搜索流程，不向模型开放任意工具调用/代码执行；
   这降低提示注入风险，但也限制复杂自主工具编排，后续可在同一授权边界内扩展。
 - 模型接入为单一配置的 HTTP gateway + 服务端预算/超时/有限重试；尚未实现多供应商
-  路由、模型级 QPS 限流、跨 run 成本归集或按角色选择模型，阶段 8/9 补齐。
+  路由、模型级 QPS 限流或按角色选择模型。阶段 9 已提供按 workspace/project/model
+  的 `/api/v1/usage/costs` 成本归集，但成本数据来自应用记账，需与供应商账单对账。
 - Reviewer 不调用额外模型；若需要语义关系判断/NLI，应在后续阶段以独立、可审计的
   reviewer provider 扩展，不能复用产生 claim 的同一模型自评。
 - followup 通过新建 linked research run 实现，补查轮数/问题数有硬上限；达到上限后
@@ -740,16 +815,18 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
   checkpointer；暂停/取消/权限变更在 superstep 边界生效，不保证中断进行中的单个
   模型/工具调用；该 superstep 已产生的 finding 会保留供审计。阶段 7 已加入 Temporal
   生命周期编排、outbox 和事件死信；workflow 失败/超时仍需运维 restart/reset。
-- failed/budget_exhausted 为终态；本阶段只支持 paused 的 resume，没有 failed 重跑、
-  提高预算或所有权转移 API。局部 task 重试在 run 内完成；跨 run 的人工恢复/审批流
-  属于阶段 8/9。
+- failed/budget_exhausted 为终态；只支持 paused 的 resume，没有 failed 重跑、提高
+  预算或所有权转移 API。局部 task 重试在 run 内完成；阶段 8 的审批节点是报告协作
+  记录，不驱动 research run 恢复。
 - `TEMPORAL_ENABLED=false` 时 agent worker 仍使用 PostgreSQL lease 队列；true 时使用
   Temporal Worker + outbox starter。两种模式不能同时对同一 run 做 research 队列执行，
-  切换时必须排空旧模式。极端时钟/网络分区需阶段 9 的故障演练。
+  切换时必须排空旧模式。极端时钟/网络分区仍需专项故障演练。
 - 来源搜索目前是参数化 ILIKE 候选，未建立外部快照全文索引；大规模来源库需要专用
   检索/索引方案。报告生成的 claim 审查/词法冲突为 O(n²) 有界比较（默认 claim 上限
   100），大规模报告需要索引/模型辅助。
-- 未实现租户级上传/embedding/采集/Agent/报告配额与成本归集；阶段 8/9 补齐。
+- 阶段 8 已实现研究运行、待处理采集任务、监测订阅、并发监测运行和通知投递量的租户
+  配额；阶段 9 已实现 token/成本归集。上传并发、embedding 调用、报告导出数量和每
+  工作区细分配额仍未实现。
 - 文档支持 `.txt`/`.md`/`.pdf`；OCR、DOCX、表格/图片与更复杂版式解析未实现；未接入
   恶意文件扫描，解析在受限线程而非独立沙箱进程运行，部署需补充恶意内容检测与资源限制。
 - 关键词检索为 PostgreSQL 全文 + 参数化 ILIKE 回退，未接入专用 BM25/OpenSearch；
@@ -757,13 +834,15 @@ CI 在 PostgreSQL 16 service 上执行 lint、格式、类型检查、迁移升�
 - 本地 MinIO 镜像在部分网络无法匿名拉取；可使用本地文件存储或企业镜像仓库。
 - Qdrant 真实服务在本地未启动（测试使用 qdrant-client 内存模式）；生产需验证真实
   collection、payload index 与容量/延迟。
-- 本机 Docker daemon 未运行，MinIO/S3 适配器未做真实服务联调；测试使用本地文件存储。
-  S3 适配器使用 boto3 标准接口，部署时需验证桶权限、TLS、加密与生命周期策略。
+- MinIO/S3 适配器未做真实服务联调（本地 Docker 镜像仓库拉取受限；集成测试使用本地
+  PostgreSQL 容器和文件存储）。S3 适配器使用 boto3 标准接口，部署时需验证桶权限、
+  TLS、加密与生命周期策略。
 - 文档索引/删除仍在请求内同步执行并受请求超时限制；采集使用 PostgreSQL 任务队列 +
   独立 worker，但尚未接入 Temporal/Kafka。并发索引/删除与 Qdrant 跨存储一致性采用
   PG 回查、状态租约与可重试状态；阶段 7 已提供 Temporal/outbox，但文档索引/同步删除
-  的跨存储事务仍需阶段 9 的容量/故障演练验证。
+  的跨存储事务仍未完成容量/故障演练验证。
 - 报告导出对象写入与 RAG/采集相同的对象存储；本地 MinIO/S3 未做真实服务联调，生产
   需验证桶权限、TLS、加密、生命周期与导出对象保留策略。
 - 本地 Compose 数据库用户是超级用户，RLS 的实际强制需要部署时切换为非超级用户；
-  生产角色/权限、密钥轮换、SLO、备份恢复与合规认证属于后续部署阶段，本文不作未验证承诺。
+  阶段 9 提供了部署样例、Prometheus/SLO 规则和备份恢复脚本，但生产角色/权限、密钥
+  轮换、SLO、备份恢复与合规认证均需部署方验证，本文不作未验证承诺。

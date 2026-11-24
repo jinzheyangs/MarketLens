@@ -17,5 +17,6 @@ coverage.xml
 htmlcov
 tests
 docs
+deploy
 *.md
 !README.md

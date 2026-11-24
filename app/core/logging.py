@@ -7,6 +7,7 @@ sensitive keys in that mapping are redacted recursively.
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
 import sys
@@ -14,10 +15,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk.resources import Resource
 from pydantic import SecretStr
 
 from app.core.config import Settings
 from app.core.context import current_request_id, current_tenant_id
+from app.core.telemetry import _logs_endpoint
 
 REDACTED = "[REDACTED]"
 _MAX_CONTEXT_DEPTH = 6
@@ -103,6 +109,16 @@ def _base_fields(record: logging.LogRecord) -> dict[str, Any]:
     return fields
 
 
+class _RedactionFilter(logging.Filter):
+    """Redact structured context before any handler (file, stdout, OTLP)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        context = getattr(record, "context", None)
+        if context is not None:
+            record.context = redact(context)
+        return True
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         fields = _base_fields(record)
@@ -132,13 +148,38 @@ class ConsoleFormatter(logging.Formatter):
 
 def configure_logging(settings: Settings) -> None:
     """Configure root logging once per process/app construction."""
+    redaction = _RedactionFilter()
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter() if settings.log_format == "json" else ConsoleFormatter())
+    handler.addFilter(redaction)
 
     root = logging.getLogger()
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(settings.log_level)
+
+    if settings.otel_logs_enabled and settings.otel_exporter_otlp_endpoint is not None:
+        provider = LoggerProvider(
+            resource=Resource.create(
+                {
+                    "service.name": settings.otel_service_name,
+                    "service.version": settings.version,
+                    "deployment.environment.name": settings.environment,
+                }
+            )
+        )
+        provider.add_log_record_processor(
+            BatchLogRecordProcessor(
+                OTLPLogExporter(
+                    endpoint=_logs_endpoint(settings.otel_exporter_otlp_endpoint),
+                    timeout=settings.otel_export_timeout_seconds,
+                )
+            )
+        )
+        otel_handler = LoggingHandler(level=logging.NOTSET, logger_provider=provider)
+        otel_handler.addFilter(redaction)
+        root.addHandler(otel_handler)
+        atexit.register(provider.shutdown)
 
     # Uvicorn installs its own handlers before importing the app. Route them
     # through the structured root handler instead; access logs are emitted by

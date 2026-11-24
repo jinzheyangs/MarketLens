@@ -192,4 +192,5 @@ class AuditAction(StrEnum):
     APPROVAL_REQUESTED = "approval.requested"
     APPROVAL_DECIDED = "approval.decided"
     QUOTA_UPDATED = "quota.updated"
+    RETENTION_PURGED = "retention.purged"
     AUTHORIZATION_DENIED = "authorization.denied"

@@ -1,6 +1,6 @@
 PYTHON ?= python
 
-.PHONY: install install-dev run worker agent-worker events-worker monitor-worker lint format typecheck test test-unit test-integration migrate revision up down logs
+.PHONY: install install-dev run worker agent-worker events-worker monitor-worker retention security-scan lint format typecheck test test-unit test-integration migrate revision up down logs
 
 install:
 	$(PYTHON) -m pip install .
@@ -22,6 +22,12 @@ events-worker:
 
 monitor-worker:
 	$(PYTHON) -m app.monitoring.worker
+
+retention:
+	$(PYTHON) -m app.ops.retention
+
+security-scan:
+	$(PYTHON) -m pip_audit --local
 
 lint:
 	$(PYTHON) -m ruff check .

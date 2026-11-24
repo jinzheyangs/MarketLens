@@ -1,0 +1,36 @@
+{{- if .Values.api.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "marketlens.fullname" . }}-api
+  labels:
+    {{- include "marketlens.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    {{- with .Values.api.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.api.ingress.className }}
+  {{- with .Values.api.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.api.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "marketlens.fullname" $ }}-api
+                port:
+                  name: http
+          {{- end }}
+    {{- end }}
+{{- end }}

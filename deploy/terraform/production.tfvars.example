@@ -1,0 +1,14 @@
+region                    = "eu-west-1"
+environment               = "production"
+vpc_id                    = "vpc-xxxxxxxx"
+private_subnet_ids        = ["subnet-aaaaaaaa", "subnet-bbbbbbbb", "subnet-cccccccc"]
+app_security_group_ids    = ["sg-xxxxxxxx"]
+db_instance_class         = "db.r6g.xlarge"
+db_allocated_storage_gb   = 200
+db_max_allocated_storage_gb = 2000
+backup_retention_days     = 14
+deletion_protection       = true
+multi_az                  = true
+# These are declared targets for the operator's runbook, not measured values.
+rpo_hours                 = 1
+rto_hours                 = 4

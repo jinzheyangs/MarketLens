@@ -1,0 +1,11 @@
+region                 = "eu-west-1"
+environment            = "dev"
+vpc_id                 = "vpc-xxxxxxxx"
+private_subnet_ids     = ["subnet-aaaaaaaa", "subnet-bbbbbbbb"]
+app_security_group_ids = ["sg-xxxxxxxx"]
+db_instance_class      = "db.t4g.medium"
+backup_retention_days  = 7
+deletion_protection    = false
+multi_az               = false
+rpo_hours              = 24
+rto_hours              = 8

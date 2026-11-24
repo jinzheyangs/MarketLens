@@ -29,3 +29,10 @@ htmlcov/
 Thumbs.db
 .idea/
 .vscode/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+.terraform.lock.hcl

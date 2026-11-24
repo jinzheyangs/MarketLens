@@ -63,6 +63,7 @@ jobs:
           python -m app.agent.worker --help
           python -m app.events.worker --help
           python -m app.monitoring.worker --help
+          python -m app.ops.retention --help
 
       - name: Migration upgrade / downgrade / upgrade / drift check
         run: |
@@ -73,6 +74,71 @@ jobs:
 
       - name: Tests
         run: pytest --cov=app --cov-report=term-missing
+
+  deploy-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.16.4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install YAML validator
+        run: pip install pyyaml
+
+      - name: Helm lint and render
+        run: |
+          helm lint deploy/helm/marketlens
+          helm template marketlens deploy/helm/marketlens \
+            --set api.ingress.enabled=true \
+            --set serviceMonitor.enabled=true \
+            --set externalSecrets.enabled=true > /tmp/marketlens-rendered.yaml
+          python - <<'PY'
+          import yaml
+          with open('/tmp/marketlens-rendered.yaml', encoding='utf-8') as handle:
+              documents = [doc for doc in yaml.safe_load_all(handle) if doc]
+          assert len(documents) >= 10, len(documents)
+          kinds = {doc['kind'] for doc in documents}
+          for required in ('Deployment', 'NetworkPolicy', 'PodDisruptionBudget',
+                           'HorizontalPodAutoscaler', 'Job', 'ServiceMonitor'):
+              assert required in kinds, required
+          PY
+
+      - name: Terraform format and validate
+        working-directory: deploy/terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: Validate observability assets
+        run: |
+          python - <<'PY'
+          import json
+          import yaml
+          with open('deploy/observability/prometheus-rules.yaml', encoding='utf-8') as handle:
+              rules = yaml.safe_load(handle)
+          assert rules['groups'], 'at least one rule group is required'
+          with open('deploy/observability/grafana-dashboard.json', encoding='utf-8') as handle:
+              dashboard = json.load(handle)
+          assert dashboard['panels'], 'dashboard must contain panels'
+          with open('deploy/observability/otel-collector.yaml', encoding='utf-8') as handle:
+              assert yaml.safe_load(handle)['service']['pipelines']
+          PY
+          bash -n deploy/scripts/backup-postgres.sh
+          bash -n deploy/scripts/restore-postgres.sh
+          bash -n deploy/scripts/verify-backup.sh
 
   docker-build:
     runs-on: ubuntu-latest

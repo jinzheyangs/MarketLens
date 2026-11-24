@@ -1,0 +1,54 @@
+# Example OpenTelemetry Collector pipeline for MarketLens traces and metrics.
+# It intentionally does not collect request/response bodies or authorization
+# headers. Review attribute filters before sending data to a third party.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+  attributes/scrub:
+    actions:
+      - key: http.request.header.authorization
+        action: delete
+      - key: http.response.header.set-cookie
+        action: delete
+      - key: db.statement
+        action: delete
+      - key: db.statement.parameters
+        action: delete
+      - key: url.query
+        action: delete
+
+exporters:
+  otlphttp:
+    endpoint: ${env:OTEL_BACKEND_ENDPOINT}
+    headers:
+      x-scope-orgid: ${env:OTEL_TENANT_ID}
+    tls:
+      insecure: false
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/scrub, batch]
+      exporters: [otlphttp]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/scrub, batch]
+      exporters: [otlphttp]

@@ -1,0 +1,92 @@
+groups:
+  - name: marketlens-slo-recording
+    interval: 30s
+    rules:
+      - record: marketlens:http_requests:rate5m
+        expr: |
+          sum(rate(marketlens_http_requests_total{route!="/metrics"}[5m]))
+      - record: marketlens:http_5xx:ratio5m
+        expr: |
+          sum(rate(marketlens_http_requests_total{status=~"5..",route!="/metrics"}[5m]))
+          /
+          clamp_min(sum(rate(marketlens_http_requests_total{route!="/metrics"}[5m])), 0.001)
+      - record: marketlens:http_latency_p95:5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(marketlens_http_request_duration_seconds_bucket[5m]))
+          )
+      - record: marketlens:http_latency_p99:5m
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le) (rate(marketlens_http_request_duration_seconds_bucket[5m]))
+          )
+
+  - name: marketlens-slo-alerts
+    rules:
+      - alert: MarketLensAvailabilityBudgetBurn
+        expr: marketlens:http_5xx:ratio5m > (14.4 * 0.001)
+        for: 10m
+        labels:
+          severity: critical
+          service: marketlens-api
+        annotations:
+          summary: MarketLens is burning the 99.9% availability error budget.
+          description: >-
+            5xx ratio {{ $value | humanizePercentage }} over 5m exceeds the
+            14.4x burn rate for a 30-day 99.9% SLO. Follow the on-call runbook.
+          runbook_url: docs/operations-runbook.md
+
+      - alert: MarketLensHighLatency
+        expr: marketlens:http_latency_p95:5m > 1
+        for: 10m
+        labels:
+          severity: warning
+          service: marketlens-api
+        annotations:
+          summary: MarketLens API p95 latency is above 1 second.
+          description: >-
+            p95 is {{ $value | humanizeDuration }} over 5m. Check database
+            saturation, external provider latency, and worker backlog.
+          runbook_url: docs/operations-runbook.md
+
+      - alert: MarketLensApiNoTraffic
+        expr: sum(up{job=~"marketlens-api.*"}) == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: marketlens-api
+        annotations:
+          summary: Prometheus cannot scrape any MarketLens API instance.
+          description: Check Deployments, NetworkPolicy, Service endpoints, and the metrics bearer token.
+          runbook_url: docs/operations-runbook.md
+
+      - alert: MarketLensWorkerUnavailable
+        expr: |
+          max by (deployment) (
+            kube_deployment_status_replicas_unavailable{
+              namespace="marketlens",
+              deployment=~"marketlens-(collector|agent|events|monitoring)"
+            }
+          ) > 0
+        for: 15m
+        labels:
+          severity: warning
+          service: marketlens-workers
+        annotations:
+          summary: A MarketLens worker Deployment has unavailable replicas.
+          description: Deployment {{ $labels.deployment }} has {{ $value }} unavailable replicas.
+          runbook_url: docs/operations-runbook.md
+
+      - alert: MarketLensMigrationJobFailed
+        expr: |
+          kube_job_status_failed{namespace="marketlens", job_name=~"marketlens-.*-migrate-.*"} > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: marketlens-migrations
+        annotations:
+          summary: A MarketLens Alembic migration Job failed.
+          description: Inspect the Job logs before retrying or rolling back.
+          runbook_url: docs/operations-runbook.md

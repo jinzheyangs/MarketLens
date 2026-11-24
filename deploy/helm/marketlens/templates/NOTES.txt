@@ -1,0 +1,18 @@
+MarketLens has been deployed.
+
+1. Create the runtime Secret (or enable externalSecrets) named:
+   {{ .Values.existingSecret }}
+   Required keys include DATABASE_URL, OIDC_JWKS_URI,
+   NOTIFICATION_ENCRYPTION_KEY (when monitoring is enabled), and
+   METRICS_BEARER_TOKEN (when metrics are enabled).
+
+2. The pre-upgrade migration Job runs `alembic upgrade head`. Review its logs:
+   kubectl -n {{ .Release.Namespace }} logs job/{{ include "marketlens.fullname" . }}-migrate-{{ .Release.Revision }}
+
+3. Verify readiness:
+   kubectl -n {{ .Release.Namespace }} get pods
+   curl https://<your-host>/health/ready
+
+4. Roll back with `helm rollback {{ .Release.Name }} <revision>`.
+   Helm does not reverse Alembic migrations; see docs/operations-runbook.md
+   before rolling back across a schema boundary.

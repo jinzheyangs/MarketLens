@@ -1,0 +1,226 @@
+# Production-oriented defaults. Managed dependencies (PostgreSQL, S3, Kafka,
+# Temporal, Qdrant) are external; this chart deploys only stateless workloads.
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  registry: ghcr.io/jinzheyangs
+  repository: marketlens-api
+  # Defaults to .Chart.AppVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Name of an existing Secret (or ExternalSecret target) containing environment
+# variables. Never put secret values in this values file.
+existingSecret: marketlens-secrets
+# Optional extra envFrom entries.
+envFrom: []
+env:
+  ENVIRONMENT: production
+  DEBUG: "false"
+  LOG_FORMAT: json
+  LOG_LEVEL: INFO
+  OIDC_ENABLED: "true"
+  ALLOWED_HOSTS: api.example.com
+  METRICS_ENABLED: "true"
+  OTEL_ENABLED: "true"
+  MONITORING_ENABLED: "true"
+  TEMPORAL_ENABLED: "true"
+  EVENT_PUBLISHER: kafka
+  EVENT_CONSUMER_ENABLED: "true"
+
+podAnnotations: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+api:
+  replicaCount: 2
+  terminationGracePeriodSeconds: 30
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8000
+  ingress:
+    enabled: false
+    className: nginx
+    annotations: {}
+    hosts:
+      - host: api.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+# Background workers share the image but have no inbound service. Scaling a
+# worker above one replica is safe because all queues use lease/SKIP LOCKED.
+workers:
+  collector:
+    enabled: true
+    replicaCount: 1
+    command: ["python", "-m", "app.collector.worker"]
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+  agent:
+    enabled: true
+    replicaCount: 2
+    command: ["python", "-m", "app.agent.worker"]
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+  events:
+    enabled: true
+    replicaCount: 1
+    command: ["python", "-m", "app.events.worker"]
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+  monitoring:
+    enabled: true
+    replicaCount: 1
+    command: ["python", "-m", "app.monitoring.worker"]
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+
+migration:
+  enabled: true
+  backoffLimit: 3
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 86400
+
+networkPolicy:
+  enabled: true
+  # Replace with the namespace label of your ingress controller / service mesh.
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+  # Add the Prometheus/monitoring namespace here when ServiceMonitor scraping
+  # must cross a namespace boundary.
+  additionalIngress: []
+  # Example:
+  # additionalIngress:
+  #   - from:
+  #       - namespaceSelector:
+  #           matchLabels:
+  #             kubernetes.io/metadata.name: monitoring
+  #     ports:
+  #       - protocol: TCP
+  #         port: 8000
+  # Private dependency ranges. Tighten to your VPC CIDRs.
+  privateNetworks:
+    - cidr: 10.0.0.0/8
+    - cidr: 172.16.0.0/12
+    - cidr: 192.168.0.0/16
+  dependencyPorts:
+    - 5432
+    - 6333
+    - 6334
+    - 9092
+    - 9093
+    - 7233
+  # Outbound HTTPS for collectors, model gateways, webhooks, and S3.
+  publicEgress:
+    enabled: true
+    ports: [80, 443]
+    except:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 169.254.0.0/16
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  # Secret containing the METRICS_BEARER_TOKEN value.
+  bearerTokenSecret:
+    name: marketlens-metrics
+    key: token
+  labels: {}
+
+externalSecrets:
+  enabled: false
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+  targetSecretName: marketlens-secrets
+  refreshInterval: 1h
+  data:
+    - secretKey: DATABASE_URL
+      remoteRef:
+        key: marketlens/production/database
+        property: url
+    - secretKey: OIDC_JWKS_URI
+      remoteRef:
+        key: marketlens/production/oidc
+        property: jwks_uri
+    - secretKey: NOTIFICATION_ENCRYPTION_KEY
+      remoteRef:
+        key: marketlens/production/notifications
+        property: fernet_key
+    - secretKey: METRICS_BEARER_TOKEN
+      remoteRef:
+        key: marketlens/production/metrics
+        property: token
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/component: api

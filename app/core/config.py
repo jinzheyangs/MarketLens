@@ -292,6 +292,14 @@ class Settings(BaseSettings):
         default=1_000, ge=1, le=1_000_000
     )
 
+    # Operational data retention (stage 9). Business records such as reports,
+    # evidence, comments, and monitoring changes are never deleted by this job;
+    # they require an explicit tenant data-lifecycle decision.
+    retention_operational_days: int = Field(default=180, ge=1, le=3_650)
+    retention_event_days: int = Field(default=30, ge=1, le=3_650)
+    retention_batch_size: int = Field(default=1_000, ge=1, le=10_000)
+    retention_destructive_enabled: bool = False
+
     # HTTP / API behavior.
     log_level: LogLevel = "INFO"
     log_format: Literal["json", "console"] = "json"
@@ -327,6 +335,11 @@ class Settings(BaseSettings):
     otel_service_name: str = "market-intel-backend"
     otel_traces_sampler_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
     otel_export_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    otel_logs_enabled: bool = False
+    # Prometheus scrape endpoint. Low-cardinality request metrics only.
+    metrics_enabled: bool = False
+    metrics_path: str = "/metrics"
+    metrics_bearer_token: SecretStr | None = Field(default=None, repr=False)
 
     @field_validator("environment", "log_format", mode="before")
     @classmethod
@@ -347,6 +360,7 @@ class Settings(BaseSettings):
         "agent_api_key",
         "kafka_sasl_password",
         "notification_encryption_key",
+        "metrics_bearer_token",
         mode="before",
     )
     @classmethod
@@ -457,6 +471,19 @@ class Settings(BaseSettings):
         if not _HEADER_NAME_PATTERN.fullmatch(value):
             raise ValueError("NOTIFICATION_SIGNING_HEADER must be a valid header name")
         return value
+
+    @field_validator("metrics_path")
+    @classmethod
+    def _validate_metrics_path(cls, value: str) -> str:
+        candidate = value.strip()
+        if (
+            not candidate.startswith("/")
+            or candidate.startswith("//")
+            or len(candidate) > 100
+            or any(character.isspace() for character in candidate)
+        ):
+            raise ValueError("METRICS_PATH must be an absolute URL path")
+        return candidate
 
     @field_validator("event_topic", "event_dead_letter_topic")
     @classmethod
@@ -712,8 +739,8 @@ class Settings(BaseSettings):
             raise ValueError("CORS_ALLOW_CREDENTIALS cannot be combined with a wildcard origin")
         if self.qdrant_api_key is not None and self.qdrant_url is None:
             raise ValueError("QDRANT_API_KEY requires QDRANT_URL")
-        if self.otel_enabled and not self.otel_exporter_otlp_endpoint:
-            raise ValueError("OTEL_ENABLED requires OTEL_EXPORTER_OTLP_ENDPOINT")
+        if (self.otel_enabled or self.otel_logs_enabled) and not (self.otel_exporter_otlp_endpoint):
+            raise ValueError("OTEL_ENABLED/OTEL_LOGS_ENABLED require OTEL_EXPORTER_OTLP_ENDPOINT")
 
         if self.oidc_enabled:
             missing = [
@@ -899,6 +926,13 @@ class Settings(BaseSettings):
                     )
                 if self.notification_allow_http:
                     raise ValueError("NOTIFICATION_ALLOW_HTTP must be false in production")
+            if self.metrics_enabled:
+                if self.metrics_bearer_token is None:
+                    raise ValueError("METRICS_ENABLED requires METRICS_BEARER_TOKEN in production")
+                if len(self.metrics_bearer_token.get_secret_value()) < 24:
+                    raise ValueError(
+                        "METRICS_BEARER_TOKEN must be at least 24 characters in production"
+                    )
         return self
 
     @property

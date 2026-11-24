@@ -1,0 +1,52 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "marketlens.fullname" . }}
+  labels:
+    {{- include "marketlens.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "marketlens.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- toYaml .Values.networkPolicy.ingress | nindent 4 }}
+    {{- with .Values.networkPolicy.additionalIngress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- range .Values.networkPolicy.privateNetworks }}
+    - to:
+        - ipBlock:
+            cidr: {{ .cidr }}
+      ports:
+        {{- range $.Values.networkPolicy.dependencyPorts }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+    {{- end }}
+    {{- if .Values.networkPolicy.publicEgress.enabled }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- toYaml .Values.networkPolicy.publicEgress.except | nindent 14 }}
+      ports:
+        {{- range .Values.networkPolicy.publicEgress.ports }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+    {{- end }}
+{{- end }}

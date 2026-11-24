@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -26,3 +29,26 @@ class QuotaUpdate(BaseModel):
     max_monitor_subscriptions: int | None = Field(default=None, ge=1, le=10_000)
     max_concurrent_monitor_runs: int | None = Field(default=None, ge=1, le=100)
     max_notification_deliveries_per_day: int | None = Field(default=None, ge=1, le=1_000_000)
+
+
+class CostBucketRead(BaseModel):
+    workspace_id: UUID
+    project_id: UUID | None
+    model_provider: str
+    model_name: str
+    runs: int
+    input_tokens: int
+    output_tokens: int
+    cost_micros: int
+    tool_calls: int
+
+
+class CostSummaryRead(BaseModel):
+    since: datetime
+    until: datetime
+    runs: int
+    input_tokens: int
+    output_tokens: int
+    cost_micros: int
+    tool_calls: int
+    buckets: list[CostBucketRead]

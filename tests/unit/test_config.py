@@ -529,3 +529,35 @@ def test_production_monitoring_hardening() -> None:
         notification_encryption_key=key,
     )
     assert settings.monitoring_enabled is True
+
+
+def test_metrics_configuration_hardening() -> None:
+    with pytest.raises(ValidationError):
+        make_settings(metrics_path="metrics")
+    with pytest.raises(ValidationError):
+        make_settings(metrics_path="/bad path")
+    with pytest.raises(ValidationError):
+        make_production_settings(metrics_enabled=True)
+    with pytest.raises(ValidationError):
+        make_production_settings(
+            metrics_enabled=True,
+            metrics_bearer_token="short",
+        )
+
+    token = "metrics-token-at-least-24-characters"
+    settings = make_production_settings(
+        metrics_enabled=True,
+        metrics_bearer_token=token,
+    )
+    assert settings.metrics_enabled is True
+    assert token not in repr(settings)
+
+
+def test_otel_logs_require_endpoint() -> None:
+    with pytest.raises(ValidationError):
+        make_settings(otel_logs_enabled=True)
+    settings = make_settings(
+        otel_logs_enabled=True,
+        otel_exporter_otlp_endpoint="https://collector.example.com/v1/traces",
+    )
+    assert settings.otel_logs_enabled is True
