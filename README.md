@@ -168,8 +168,9 @@ RETENTION_DESTRUCTIVE_ENABLED=true python -m app.ops.retention --execute
 完整发布、回滚、备份恢复、故障演练和 SLO 说明见
 [`docs/operations-runbook.md`](docs/operations-runbook.md)。部署资产是样例；
 Helm/Terraform 已做语法与 `terraform validate`/`helm lint` 校验，但未在真实云环境
-apply，也未执行恢复演练。RPO/RTO 必须由部署方配置并测量，仓库不声称合规认证或
-可用性保证。
+apply。逻辑备份/恢复脚本已在本地 PostgreSQL 上完成备份→校验→恢复演练（42 张表
+恢复成功），但未在云 RDS/PITR 上演练。RPO/RTO 必须由部署方配置并测量，仓库不声称
+合规认证或可用性保证。
 
 ### 5. 验证
 
@@ -731,19 +732,21 @@ RPO/RTO 均不声称已验证。
 - 变更检测只比较来源 URL 与快照内容哈希，不做 HTML 语义 diff、价格/实体抽取。
 - 通知适配器只有 webhook/log；邮件、企业微信、Slack 等需要新增受控 egress 实现。
 - 通知投递为 at-least-once，接收方必须按 delivery ID 去重；没有端到端 exactly-once。
-- 渠道密钥由单个 Fernet key 加密，无自动多密钥轮换或 KMS 信封加密。
+- 渠道支持 PATCH 更新 URL/签名密钥，并支持一把 previous key 的在线轮换
+  (`python -m app.ops.notification_keys`)；仍无 KMS 信封加密/密钥版本表。
 - 配额是软上限：已开始的运行/任务不会被中断，并发边界可能短暂超限一个单位。
-- 审批节点不驱动报告版本状态机，也不发送站内通知；报告正式审批仍走 checksum 校验
-  的管理员接口。
+- 审批节点不驱动报告版本状态机，也不发送站内通知；支持请求人/管理员取消和按状态/
+  指派人过滤，报告正式审批仍走 checksum 校验的管理员接口。
 - 评论只有单层父子关系、无富文本/附件/@提及/实时推送；正文上限 5000 字符。
-- 查询/变更 API 只提供订阅级分页，没有跨租户/跨工作区聚合搜索。
+- 监测查询/变更 API 只提供订阅级分页，没有跨租户/跨工作区聚合搜索；租户管理员可用
+  `/api/v1/operations/queues` 查看积压，但 worker 仍未暴露 Prometheus 指标。
 
 ### 阶段 9（生产运营）
 
 - Helm/Terraform 已通过 `helm lint`、`helm template`、`terraform fmt` 和
   `terraform validate`，但未在真实 Kubernetes/EKS/AWS 账户中 apply。
-- 未执行 PostgreSQL 主备切换、Kafka/Temporal/Qdrant 故障演练、k6 压测或备份恢复
-  演练；RPO/RTO、容量和 SLO 均未实测。
+- 已执行逻辑备份→SHA-256 校验→恢复演练（本地 PostgreSQL），但未执行云 RDS 主备
+  切换/PITR、Kafka/Temporal/Qdrant 故障演练或 k6 压测；RPO/RTO、容量和 SLO 均未实测。
 - Terraform 只覆盖 RDS/S3/KMS/Secrets Manager；VPC、EKS、MSK、Temporal、Qdrant、
   DNS/TLS、IAM/IRSA 需部署方提供。
 - `/metrics` 只覆盖 API HTTP 指标；worker 队列/租约/积压指标未暴露，worker 告警依赖

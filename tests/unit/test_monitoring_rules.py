@@ -39,6 +39,27 @@ def test_channel_secret_cipher_round_trip_and_tamper_detection() -> None:
         ChannelSecretCipher(make_settings())
 
 
+def test_channel_secret_cipher_previous_key_rotates_ciphertext() -> None:
+    old_key = Fernet.generate_key().decode()
+    new_key = Fernet.generate_key().decode()
+    old_settings = make_settings(notification_encryption_key=old_key)
+    rotating = make_settings(
+        notification_encryption_key=new_key,
+        notification_previous_encryption_key=old_key,
+    )
+    secret = {"url": "https://hooks.example.com/marketlens"}
+
+    old_token = ChannelSecretCipher(old_settings).encrypt(secret)
+    rotation_cipher = ChannelSecretCipher(rotating)
+    assert rotation_cipher.decrypt(old_token) == secret
+    new_token = rotation_cipher.encrypt(secret)
+    assert new_token != old_token
+
+    # The old-only deployment can no longer read the re-encrypted value.
+    with pytest.raises(ChannelSecretError):
+        ChannelSecretCipher(old_settings).decrypt(new_token)
+
+
 def test_webhook_target_validation_rejects_unsafe_destinations() -> None:
     client = SafeWebhookClient(
         make_settings(

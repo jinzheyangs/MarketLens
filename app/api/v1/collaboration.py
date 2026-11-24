@@ -12,7 +12,9 @@ from app.auth.authorization import AuthorizationService, ResourceContext
 from app.auth.dependencies import get_authorization, get_principal
 from app.auth.enums import Permission
 from app.auth.principal import Principal
+from app.collaboration.enums import ApprovalStatus
 from app.collaboration.service import (
+    cancel_approval,
     create_approval_request,
     create_comment,
     decide_approval,
@@ -158,6 +160,8 @@ async def get_project_approvals(
     session: AsyncSession = Depends(get_session),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    status: ApprovalStatus | None = Query(default=None),
+    assignee_user_id: UUID | None = Query(default=None),
 ) -> list[ApprovalRead]:
     project, context = await _require_project(session, project_id)
     await authz.require(Permission.APPROVAL_READ, context)
@@ -166,6 +170,8 @@ async def get_project_approvals(
         project_id=project.id,
         limit=limit,
         offset=offset,
+        status=status,
+        assignee_user_id=assignee_user_id,
     )
     return [ApprovalRead.model_validate(approval) for approval in approvals]
 
@@ -255,6 +261,41 @@ async def approve_project_approval(
         approved=True,
         note=payload.note,
     )
+
+
+@router.post(
+    "/projects/{project_id}/approval-requests/{approval_id}/cancel",
+    response_model=ApprovalRead,
+    summary="Cancel an approval node",
+)
+async def cancel_project_approval(
+    project_id: UUID,
+    approval_id: UUID,
+    payload: ApprovalDecision,
+    principal: Principal = Depends(get_principal),
+    authz: AuthorizationService = Depends(get_authorization),
+    session: AsyncSession = Depends(get_session),
+) -> ApprovalRead:
+    project, context = await _require_project(session, project_id)
+    approval = await get_approval(
+        session,
+        project_id=project.id,
+        approval_id=approval_id,
+    )
+    if approval is None:
+        raise NotFoundError("The approval request was not found.")
+    await authz.require(Permission.APPROVAL_CREATE, context)
+    if approval.requested_by != principal.user_id and not principal.is_tenant_admin:
+        admin_decision = authz.evaluate(Permission.PROJECT_MANAGE_MEMBERS, context)
+        if not admin_decision.allowed:
+            raise ForbiddenError
+    approval = await cancel_approval(
+        session,
+        approval=approval,
+        principal=principal,
+        note=payload.note,
+    )
+    return ApprovalRead.model_validate(approval)
 
 
 @router.post(

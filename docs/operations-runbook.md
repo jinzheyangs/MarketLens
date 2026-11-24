@@ -75,6 +75,10 @@ helm rollback marketlens <revision> -n marketlens --wait --timeout 10m
 
 ## 5. 故障处理
 
+租户管理员可通过 `GET /api/v1/operations/queues` 获取当前租户的研究、采集、审查、
+导出、监测、通知、审批、outbox 和 consumer failure 积压数量。该接口需要管理员
+权限，不能替代 Prometheus；worker 指标缺口见 `deploy/observability/README.md`。
+
 ### API 5xx / 可用性下降
 
 1. 检查 `marketlens_http_5xx:ratio5m` 与最慢路由。
@@ -131,6 +135,21 @@ helm rollback marketlens <revision> -n marketlens --wait --timeout 10m
   处理。保留窗口应大于消息系统最大重放/延迟时间。
 - 业务数据生命周期（客户删除请求、法务保留、归档）需要独立审批流程和租户级工具；
   当前未提供自动归档到冷存储。
+
+### 通知渠道密钥轮换
+
+```bash
+# 1. 部署配置：新 primary + 旧 previous
+# NOTIFICATION_ENCRYPTION_KEY=<new>
+# NOTIFICATION_PREVIOUS_ENCRYPTION_KEY=<old>
+python -m app.ops.notification_keys            # dry-run，确认 failed=0
+python -m app.ops.notification_keys --execute  # 重新加密并写审计
+python -m app.ops.notification_keys            # 再次验证
+```
+
+确认全部渠道 rotated、failed=0 后才移除 `NOTIFICATION_PREVIOUS_ENCRYPTION_KEY`。
+如果出现 failed，保留旧密钥并检查渠道密文/密钥来源；轮换不会删除 or 覆盖无法解密
+的配置。该流程只支持一把 previous key，不支持 KMS 信封加密。
 
 ## 8. 成本与配额
 

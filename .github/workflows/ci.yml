@@ -64,6 +64,7 @@ jobs:
           python -m app.events.worker --help
           python -m app.monitoring.worker --help
           python -m app.ops.retention --help
+          python -m app.ops.notification_keys --help
 
       - name: Migration upgrade / downgrade / upgrade / drift check
         run: |
@@ -74,6 +75,28 @@ jobs:
 
       - name: Tests
         run: pytest --cov=app --cov-report=term-missing
+
+      - name: Backup and restore drill
+        env:
+          PGPASSWORD: ci-only-password
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          mkdir -p /tmp/marketlens-backups
+          BACKUP_DATABASE_URL="postgresql://market_intel:ci-only-password@127.0.0.1:5432/market_intel_test" \
+            BACKUP_DIR=/tmp/marketlens-backups \
+            bash deploy/scripts/backup-postgres.sh
+          dump=$(ls -t /tmp/marketlens-backups/*.dump | head -1)
+          bash deploy/scripts/verify-backup.sh "$dump"
+          psql -h 127.0.0.1 -U market_intel -d market_intel_test \
+            -c "DROP DATABASE IF EXISTS market_intel_restore" \
+            -c "CREATE DATABASE market_intel_restore"
+          RESTORE_DATABASE_URL="postgresql://market_intel:ci-only-password@127.0.0.1:5432/market_intel_restore" \
+            RESTORE_DUMP="$dump" \
+            RESTORE_CONFIRM=market_intel_restore \
+            bash deploy/scripts/restore-postgres.sh
+          psql -h 127.0.0.1 -U market_intel -d market_intel_restore \
+            -c "SELECT count(*) FROM tenants"
 
   deploy-validate:
     runs-on: ubuntu-latest

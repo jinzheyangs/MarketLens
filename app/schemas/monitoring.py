@@ -6,7 +6,14 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    StringConstraints,
+    model_validator,
+)
 
 from app.monitoring.enums import (
     ChangeType,
@@ -65,6 +72,24 @@ class NotificationChannelCreate(BaseModel):
     kind: NotificationChannelKind
     url: str | None = Field(default=None, max_length=2_048)
     signing_secret: SecretStr | None = None
+
+
+class NotificationChannelUpdate(BaseModel):
+    name: NameString | None = None
+    url: str | None = Field(default=None, max_length=2_048)
+    signing_secret: SecretStr | None = None
+    clear_signing_secret: bool = False
+
+    @model_validator(mode="after")
+    def _require_change(self) -> NotificationChannelUpdate:
+        if (
+            self.name is None
+            and self.url is None
+            and self.signing_secret is None
+            and not self.clear_signing_secret
+        ):
+            raise ValueError("at least one channel field must be updated")
+        return self
 
 
 class NotificationChannelRead(BaseModel):

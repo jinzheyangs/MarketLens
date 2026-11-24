@@ -14,7 +14,12 @@ from app.auth.enums import AuditAction, ResourceType
 from app.auth.principal import Principal
 from app.collector.service import CollectorServices
 from app.core.config import Settings
-from app.core.errors import ConflictError, NotFoundError, ServiceUnavailableError
+from app.core.errors import (
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
 from app.db.models import (
     MonitorAlertRule,
     MonitorChange,
@@ -70,6 +75,12 @@ def require_monitoring_services(
     return services
 
 
+def _validate_signing_secret(value: str) -> str:
+    if not 8 <= len(value) <= 256:
+        raise BadRequestError("signing_secret must be 8-256 characters")
+    return value
+
+
 async def create_notification_channel(
     session: AsyncSession,
     *,
@@ -85,13 +96,11 @@ async def create_notification_channel(
     encrypted: str | None = None
     if kind is NotificationChannelKind.WEBHOOK:
         if not url:
-            raise ValueError("webhook URL is required")
+            raise BadRequestError("webhook URL is required")
         webhook.validate_target(url)
         config: dict[str, str] = {"url": url}
         if signing_secret:
-            if not 8 <= len(signing_secret) <= 256:
-                raise ValueError("signing_secret must be 8-256 characters")
-            config["signing_secret"] = signing_secret
+            config["signing_secret"] = _validate_signing_secret(signing_secret)
         try:
             encrypted = ChannelSecretCipher(settings).encrypt(config)
         except ChannelSecretError as exc:
@@ -115,10 +124,79 @@ async def create_notification_channel(
         session,
         tenant_id=principal.tenant_id,
         actor_user_id=principal.user_id,
-        action=AuditAction.MONITOR_SUBSCRIPTION_UPDATED,
+        action=AuditAction.NOTIFICATION_CHANNEL_CREATED,
         resource_type=ResourceType.NOTIFICATION_CHANNEL,
         resource_id=channel.id,
-        details={"kind": channel.kind, "created": True},
+        details={"kind": channel.kind},
+    )
+    await session.refresh(channel)
+    return channel
+
+
+async def update_notification_channel(
+    session: AsyncSession,
+    *,
+    settings: Settings,
+    webhook: SafeWebhookClient,
+    channel: NotificationChannel,
+    principal: Principal,
+    name: str | None,
+    url: str | None,
+    signing_secret: str | None,
+    clear_signing_secret: bool = False,
+) -> NotificationChannel:
+    kind = NotificationChannelKind(channel.kind)
+    candidate_name = name.strip() if name is not None else None
+    if candidate_name is not None and (not candidate_name or len(candidate_name) > 120):
+        raise BadRequestError("channel name is invalid")
+
+    config_changed = False
+    if kind is NotificationChannelKind.WEBHOOK:
+        needs_config = url is not None or signing_secret is not None or clear_signing_secret
+        if needs_config:
+            if channel.encrypted_config is None:
+                raise ConflictError("The channel has no stored configuration.")
+            try:
+                config = ChannelSecretCipher(settings).decrypt(channel.encrypted_config)
+            except ChannelSecretError as exc:
+                raise ConflictError(
+                    "The channel secret cannot be decrypted with the configured keys."
+                ) from exc
+            if url is not None:
+                webhook.validate_target(url)
+                config["url"] = url
+                config_changed = True
+            if signing_secret is not None and clear_signing_secret:
+                raise BadRequestError("cannot set and clear signing_secret together")
+            if signing_secret is not None:
+                config["signing_secret"] = _validate_signing_secret(signing_secret)
+                config_changed = True
+            elif clear_signing_secret:
+                config.pop("signing_secret", None)
+                config_changed = True
+            if config_changed:
+                channel.encrypted_config = ChannelSecretCipher(settings).encrypt(config)
+    elif url is not None or signing_secret is not None or clear_signing_secret:
+        raise BadRequestError("log channels do not accept webhook configuration")
+
+    if candidate_name is not None:
+        channel.name = candidate_name
+    try:
+        async with session.begin_nested():
+            await session.flush()
+    except IntegrityError as exc:
+        raise ConflictError("A notification channel with this name already exists.") from exc
+    record_event(
+        session,
+        tenant_id=principal.tenant_id,
+        actor_user_id=principal.user_id,
+        action=AuditAction.NOTIFICATION_CHANNEL_UPDATED,
+        resource_type=ResourceType.NOTIFICATION_CHANNEL,
+        resource_id=channel.id,
+        details={
+            "name_changed": candidate_name is not None,
+            "config_changed": config_changed,
+        },
     )
     await session.refresh(channel)
     return channel
@@ -168,7 +246,7 @@ async def disable_notification_channel(
         session,
         tenant_id=principal.tenant_id,
         actor_user_id=principal.user_id,
-        action=AuditAction.MONITOR_SUBSCRIPTION_UPDATED,
+        action=AuditAction.NOTIFICATION_CHANNEL_DISABLED,
         resource_type=ResourceType.NOTIFICATION_CHANNEL,
         resource_id=channel.id,
         details={"enabled": False},
@@ -205,15 +283,15 @@ async def create_subscription(
     candidate_name = name.strip()
     candidate_query = query.strip()
     if not candidate_name or len(candidate_name) > 120:
-        raise ValueError("subscription name is invalid")
+        raise BadRequestError("subscription name is invalid")
     if not candidate_query or len(candidate_query) > 500:
-        raise ValueError("subscription query is invalid")
+        raise BadRequestError("subscription query is invalid")
     if not (
         settings.monitoring_min_cadence_minutes
         <= cadence_minutes
         <= settings.monitoring_max_cadence_minutes
     ):
-        raise ValueError("cadence_minutes is outside the configured range")
+        raise BadRequestError("cadence_minutes is outside the configured range")
     await ensure_quota(
         session,
         tenant_id=principal.tenant_id,
@@ -332,7 +410,7 @@ async def update_subscription(
     if query is not None:
         candidate = query.strip()
         if not candidate or len(candidate) > 500:
-            raise ValueError("subscription query is invalid")
+            raise BadRequestError("subscription query is invalid")
         subscription.query = candidate
     if cadence_minutes is not None:
         if not (
@@ -340,7 +418,7 @@ async def update_subscription(
             <= cadence_minutes
             <= settings.monitoring_max_cadence_minutes
         ):
-            raise ValueError("cadence_minutes is outside the configured range")
+            raise BadRequestError("cadence_minutes is outside the configured range")
         subscription.cadence_minutes = cadence_minutes
     if alerts is not None:
         alerts = _normalize_alerts(alerts)
@@ -546,5 +624,6 @@ __all__ = [
     "set_subscription_status",
     "severity_at_least",
     "trigger_subscription",
+    "update_notification_channel",
     "update_subscription",
 ]

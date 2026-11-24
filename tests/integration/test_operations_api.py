@@ -13,6 +13,7 @@ from app.auth.oidc import JWTVerifier
 from app.core.context import tenant_context
 from app.db.models import (
     AuditEvent,
+    CollectionTask,
     DomainEvent,
     EventConsumerFailure,
     ProcessedEvent,
@@ -292,3 +293,48 @@ async def test_retention_execute_requires_explicit_opt_in(
 
     outcome = retention.main(["--execute", "--tenant", str(seed.tenant_a)])
     assert outcome == 2
+
+
+async def test_operations_queue_snapshot(operations_client: Any) -> None:
+    client, seed, application, _ = operations_client
+    url = "https://example.test/queued-source"
+    with tenant_context(seed.tenant_a):
+        async with application.state.session_factory() as session, session.begin():
+            session.add(
+                CollectionTask(
+                    id=uuid4(),
+                    tenant_id=seed.tenant_a,
+                    workspace_id=seed.workspace_a,
+                    requested_by=seed.user_ids["workspace_editor_a"],
+                    url=url,
+                    url_hash="a" * 64,
+                    domain="example.test",
+                    status="pending",
+                    attempts=0,
+                    max_attempts=1,
+                )
+            )
+
+    response = await client.get(
+        "/api/v1/operations/queues",
+        headers=_auth(seed.tokens["tenant_admin_a"]),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["pending_collection_tasks"] >= 1
+    for key in (
+        "outbox_pending",
+        "outbox_failed",
+        "consumer_failures_open",
+        "pending_monitor_runs",
+        "pending_notification_deliveries",
+        "pending_approvals",
+        "generated_at",
+    ):
+        assert key in body
+
+    forbidden = await client.get(
+        "/api/v1/operations/queues",
+        headers=_auth(seed.tokens["workspace_admin_a"]),
+    )
+    assert forbidden.status_code == 403

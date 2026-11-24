@@ -68,6 +68,15 @@ class AuthenticationError(AppError):
         )
 
 
+class BadRequestError(AppError):
+    def __init__(self, message: str = "The request is invalid.") -> None:
+        super().__init__(
+            code=ErrorCode.BAD_REQUEST,
+            message=message,
+            status_code=400,
+        )
+
+
 class ForbiddenError(AppError):
     def __init__(self) -> None:
         super().__init__(

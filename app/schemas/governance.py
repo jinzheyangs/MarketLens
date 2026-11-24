@@ -52,3 +52,18 @@ class CostSummaryRead(BaseModel):
     cost_micros: int
     tool_calls: int
     buckets: list[CostBucketRead]
+
+
+class QueueSnapshotRead(BaseModel):
+    generated_at: datetime
+    active_research_runs: int
+    pending_collection_tasks: int
+    pending_reviews: int
+    pending_exports: int
+    pending_monitor_runs: int
+    pending_notification_deliveries: int
+    pending_approvals: int
+    outbox_pending: int
+    outbox_failed: int
+    consumer_failures_open: int
+    consumer_failures_dead_letter: int

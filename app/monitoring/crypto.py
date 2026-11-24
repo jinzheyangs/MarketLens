@@ -15,25 +15,37 @@ class ChannelSecretCipher:
     def __init__(self, settings: Settings) -> None:
         if settings.notification_encryption_key is None:
             raise ChannelSecretError
+        keys = [settings.notification_encryption_key]
+        if settings.notification_previous_encryption_key is not None:
+            keys.append(settings.notification_previous_encryption_key)
         try:
-            self._fernet = Fernet(
-                settings.notification_encryption_key.get_secret_value().encode("ascii")
-            )
+            self._fernets = [Fernet(key.get_secret_value().encode("ascii")) for key in keys]
         except (ValueError, UnicodeEncodeError) as exc:
             raise ChannelSecretError from exc
+        self._primary = self._fernets[0]
 
     def encrypt(self, value: dict[str, Any]) -> str:
         raw = json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-        return self._fernet.encrypt(raw).decode("ascii")
+        return self._primary.encrypt(raw).decode("ascii")
 
     def decrypt(self, token: str) -> dict[str, Any]:
-        try:
-            raw = self._fernet.decrypt(token.encode("ascii"))
-            decoded = json.loads(raw)
-        except (InvalidToken, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ChannelSecretError from exc
-        if not isinstance(decoded, dict):
-            raise ChannelSecretError
+        decoded: object = None
+        last_error: Exception | None = None
+        for fernet in self._fernets:
+            try:
+                raw = fernet.decrypt(token.encode("ascii"))
+                decoded = json.loads(raw)
+                break
+            except (
+                InvalidToken,
+                ValueError,
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+            ) as exc:
+                last_error = exc
+                continue
+        if decoded is None or not isinstance(decoded, dict):
+            raise ChannelSecretError from last_error
         return decoded
 
 

@@ -273,6 +273,9 @@ class Settings(BaseSettings):
     monitoring_new_source_severity: Literal["low", "medium", "high", "critical"] = "medium"
     monitoring_change_severity: Literal["low", "medium", "high", "critical"] = "high"
     notification_encryption_key: SecretStr | None = Field(default=None, repr=False)
+    # Previous key used only to decrypt existing ciphertext during rotation.
+    # New writes always use notification_encryption_key.
+    notification_previous_encryption_key: SecretStr | None = Field(default=None, repr=False)
     notification_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
     notification_max_response_bytes: int = Field(default=65_536, ge=1_024, le=1_000_000)
     notification_max_attempts: int = Field(default=5, ge=1, le=20)
@@ -360,6 +363,7 @@ class Settings(BaseSettings):
         "agent_api_key",
         "kafka_sasl_password",
         "notification_encryption_key",
+        "notification_previous_encryption_key",
         "metrics_bearer_token",
         mode="before",
     )
@@ -451,7 +455,10 @@ class Settings(BaseSettings):
                 normalized.append(candidate)
         return normalized
 
-    @field_validator("notification_encryption_key")
+    @field_validator(
+        "notification_encryption_key",
+        "notification_previous_encryption_key",
+    )
     @classmethod
     def _validate_notification_key(cls, value: SecretStr | None) -> SecretStr | None:
         if value is None:

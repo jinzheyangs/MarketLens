@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.enums import AuditAction, ResourceType
 from app.auth.principal import Principal
 from app.collaboration.enums import ApprovalResourceType, ApprovalStatus, CommentStatus
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import BadRequestError, ConflictError, NotFoundError
 from app.db.models import (
     ApprovalRequest,
     Project,
@@ -36,7 +36,7 @@ async def create_comment(
 ) -> ProjectComment:
     candidate = body.strip()
     if not candidate or len(candidate) > 5_000:
-        raise ValueError("comment body must be 1-5000 characters")
+        raise BadRequestError("comment body must be 1-5000 characters")
     if parent_id is not None:
         parent = await session.scalar(
             tenant_scoped_select(ProjectComment).where(
@@ -124,7 +124,7 @@ async def update_comment(
 ) -> ProjectComment:
     candidate = body.strip()
     if not candidate or len(candidate) > 5_000:
-        raise ValueError("comment body must be 1-5000 characters")
+        raise BadRequestError("comment body must be 1-5000 characters")
     comment.body = candidate
     record_event(
         session,
@@ -195,7 +195,7 @@ async def create_approval_request(
     due_at: datetime | None,
 ) -> ApprovalRequest:
     if resource_type is not ApprovalResourceType.REPORT_VERSION:
-        raise ValueError("unsupported approval resource type")
+        raise BadRequestError("unsupported approval resource type")
     await _validate_report_version(session, project=project, resource_id=resource_id)
     assignee = await session.scalar(
         tenant_scoped_select(User).where(
@@ -255,18 +255,21 @@ async def list_approvals(
     project_id: UUID,
     limit: int,
     offset: int,
+    status: ApprovalStatus | None = None,
+    assignee_user_id: UUID | None = None,
 ) -> list[ApprovalRequest]:
-    return list(
-        (
-            await session.scalars(
-                tenant_scoped_select(ApprovalRequest)
-                .where(ApprovalRequest.project_id == project_id)
-                .order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
-                .limit(limit)
-                .offset(offset)
-            )
-        ).all()
+    statement = tenant_scoped_select(ApprovalRequest).where(
+        ApprovalRequest.project_id == project_id
     )
+    if status is not None:
+        statement = statement.where(ApprovalRequest.status == status.value)
+    if assignee_user_id is not None:
+        statement = statement.where(ApprovalRequest.assignee_user_id == assignee_user_id)
+    statement = statement.order_by(
+        ApprovalRequest.created_at.desc(),
+        ApprovalRequest.id.desc(),
+    )
+    return list((await session.scalars(statement.limit(limit).offset(offset))).all())
 
 
 async def get_approval(
@@ -319,7 +322,39 @@ async def decide_approval(
     return approval
 
 
+async def cancel_approval(
+    session: AsyncSession,
+    *,
+    approval: ApprovalRequest,
+    principal: Principal,
+    note: str | None,
+) -> ApprovalRequest:
+    if approval.status != ApprovalStatus.PENDING.value:
+        raise ConflictError("The approval request is no longer pending.")
+    approval.status = ApprovalStatus.CANCELED.value
+    approval.decision_note = note.strip()[:1_000] if note else None
+    approval.decided_by = principal.user_id
+    approval.decided_at = datetime.now(UTC)
+    record_event(
+        session,
+        tenant_id=principal.tenant_id,
+        actor_user_id=principal.user_id,
+        action=AuditAction.APPROVAL_CANCELED,
+        resource_type=ResourceType.APPROVAL_REQUEST,
+        resource_id=approval.id,
+        details={
+            "project_id": str(approval.project_id),
+            "resource_type": approval.resource_type,
+            "resource_id": str(approval.resource_id),
+        },
+    )
+    await session.flush()
+    await session.refresh(approval)
+    return approval
+
+
 __all__ = [
+    "cancel_approval",
     "create_approval_request",
     "create_comment",
     "decide_approval",

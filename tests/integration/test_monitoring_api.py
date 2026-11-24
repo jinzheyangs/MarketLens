@@ -29,8 +29,10 @@ from app.db.models import (
     WebSource,
 )
 from app.factory import create_app
+from app.monitoring.crypto import ChannelSecretCipher
 from app.monitoring.service import MonitoringServices
 from app.monitoring.worker import MonitoringWorker
+from app.ops.notification_keys import rotate_notification_keys
 from tests.conftest import make_settings, open_client
 from tests.integration.test_api_stage2 import (
     AUDIENCE,
@@ -121,7 +123,7 @@ async def _monitor(
 async def test_monitoring_channel_and_subscription_lifecycle(
     monitoring_client: Any,
 ) -> None:
-    client, seed, _, _ = monitoring_client
+    client, seed, _, settings = monitoring_client
     viewer = _auth(seed.tokens["workspace_viewer_a"])
     editor = _auth(seed.tokens["workspace_editor_a"])
 
@@ -140,6 +142,39 @@ async def test_monitoring_channel_and_subscription_lifecycle(
     assert "url" not in channel
     assert "encrypted_config" not in channel
     assert "signing_secret" not in channel
+
+    updated_channel = await client.patch(
+        f"/api/v1/workspaces/{seed.workspace_a}/notification-channels/{channel['id']}",
+        headers=_auth(seed.tokens["workspace_admin_a"]),
+        json={
+            "name": "ops-webhook-rotated",
+            "url": "https://hooks.example.test/marketlens-v2",
+            "signing_secret": "rotated-signing-secret",
+        },
+    )
+    assert updated_channel.status_code == 200, updated_channel.text
+    assert updated_channel.json()["name"] == "ops-webhook-rotated"
+    assert "encrypted_config" not in updated_channel.json()
+    with tenant_context(seed.tenant_a):
+        async with seed.session_factory() as session:
+            stored = await session.get(NotificationChannel, UUID(channel["id"]))
+            assert stored is not None
+            config = ChannelSecretCipher(settings).decrypt(stored.encrypted_config or "")
+            assert config["url"] == "https://hooks.example.test/marketlens-v2"
+            assert config["signing_secret"] == "rotated-signing-secret"
+
+    log_channel = await client.post(
+        f"/api/v1/workspaces/{seed.workspace_a}/notification-channels",
+        headers=_auth(seed.tokens["workspace_admin_a"]),
+        json={"name": "audit-log", "kind": "log"},
+    )
+    assert log_channel.status_code == 201, log_channel.text
+    invalid_log_update = await client.patch(
+        f"/api/v1/workspaces/{seed.workspace_a}/notification-channels/{log_channel.json()['id']}",
+        headers=_auth(seed.tokens["workspace_admin_a"]),
+        json={"url": "https://hooks.example.test/not-allowed"},
+    )
+    assert invalid_log_update.status_code == 400
 
     forbidden_channel = await client.post(
         f"/api/v1/workspaces/{seed.workspace_a}/notification-channels",
@@ -355,12 +390,50 @@ async def test_project_comments_and_approval_nodes(
     )
     assert again.status_code == 409
 
+    second = await client.post(
+        f"/api/v1/projects/{seed.project_a}/approval-requests",
+        headers=editor,
+        json={
+            "resource_type": "report_version",
+            "resource_id": str(version_id),
+            "assignee_user_id": str(seed.user_ids["project_editor_a"]),
+        },
+    )
+    assert second.status_code == 201, second.text
+    second_id = second.json()["id"]
+    filtered = await client.get(
+        f"/api/v1/projects/{seed.project_a}/approval-requests",
+        headers=viewer,
+        params={
+            "status": "pending",
+            "assignee_user_id": str(seed.user_ids["project_editor_a"]),
+        },
+    )
+    assert filtered.status_code == 200
+    assert [item["id"] for item in filtered.json()] == [second_id]
+
+    canceled = await client.post(
+        f"/api/v1/projects/{seed.project_a}/approval-requests/{second_id}/cancel",
+        headers=editor,
+        json={"note": "superseded"},
+    )
+    assert canceled.status_code == 200, canceled.text
+    assert canceled.json()["status"] == "canceled"
+    cancel_again = await client.post(
+        f"/api/v1/projects/{seed.project_a}/approval-requests/{second_id}/cancel",
+        headers=editor,
+        json={},
+    )
+    assert cancel_again.status_code == 409
+
     approvals = await client.get(
         f"/api/v1/projects/{seed.project_a}/approval-requests",
         headers=viewer,
     )
     assert approvals.status_code == 200
-    assert approvals.json()[0]["status"] == "approved"
+    by_id = {item["id"]: item for item in approvals.json()}
+    assert by_id[approval_id]["status"] == "approved"
+    assert by_id[second_id]["status"] == "canceled"
 
 
 async def _seed_report_version(seed: Seed) -> UUID:
@@ -576,3 +649,51 @@ async def test_monitoring_worker_detects_change_and_delivers(
             assert "signing_secret" not in delivery.payload
             assert delivery.payload["untrusted"] is True
             assert delivery.payload["source_url"] == url
+
+
+async def test_notification_key_rotation_rewrites_channel_secrets(
+    monitoring_client: Any,
+) -> None:
+    _, seed, application, _ = monitoring_client
+    old_key = Fernet.generate_key().decode()
+    new_key = Fernet.generate_key().decode()
+    old_settings = make_settings(notification_encryption_key=old_key)
+    rotating_settings = make_settings(
+        notification_encryption_key=new_key,
+        notification_previous_encryption_key=old_key,
+    )
+    new_only_settings = make_settings(notification_encryption_key=new_key)
+    channel_id = uuid4()
+    secret = {"url": "https://hooks.example.test/rotate-me"}
+    with tenant_context(seed.tenant_a):
+        async with seed.session_factory() as session, session.begin():
+            session.add(
+                NotificationChannel(
+                    id=channel_id,
+                    tenant_id=seed.tenant_a,
+                    workspace_id=seed.workspace_a,
+                    name="rotation-channel",
+                    kind="webhook",
+                    encrypted_config=ChannelSecretCipher(old_settings).encrypt(secret),
+                    enabled=True,
+                    created_by=seed.user_ids["workspace_admin_a"],
+                )
+            )
+
+    results = await rotate_notification_keys(
+        settings=rotating_settings,
+        session_factory=application.state.session_factory,
+        tenant_ids=[seed.tenant_a],
+        execute=True,
+    )
+    assert len(results) == 1
+    assert results[0].rotated == 1
+    assert results[0].failed == 0
+
+    with tenant_context(seed.tenant_a):
+        async with seed.session_factory() as session:
+            channel = await session.get(NotificationChannel, channel_id)
+            assert channel is not None
+            assert channel.encrypted_config is not None
+            rotated = ChannelSecretCipher(new_only_settings).decrypt(channel.encrypted_config)
+            assert rotated == secret

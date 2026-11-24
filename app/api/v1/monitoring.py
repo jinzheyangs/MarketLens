@@ -30,6 +30,7 @@ from app.monitoring.service import (
     list_subscriptions,
     set_subscription_status,
     trigger_subscription,
+    update_notification_channel,
     update_subscription,
 )
 from app.monitoring.webhook import SafeWebhookClient
@@ -41,6 +42,7 @@ from app.schemas.monitoring import (
     MonitorSubscriptionUpdate,
     NotificationChannelCreate,
     NotificationChannelRead,
+    NotificationChannelUpdate,
     NotificationDeliveryRead,
 )
 from app.services.tenancy import project_context, workspace_context
@@ -143,6 +145,51 @@ async def post_notification_channel(
         signing_secret=(
             payload.signing_secret.get_secret_value() if payload.signing_secret else None
         ),
+    )
+    return NotificationChannelRead.model_validate(channel)
+
+
+@router.patch(
+    "/workspaces/{workspace_id}/notification-channels/{channel_id}",
+    response_model=NotificationChannelRead,
+    summary="Update a notification channel",
+)
+async def patch_notification_channel(
+    workspace_id: UUID,
+    channel_id: UUID,
+    payload: NotificationChannelUpdate,
+    principal: Principal = Depends(get_principal),
+    authz: AuthorizationService = Depends(get_authorization),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings_dep),
+) -> NotificationChannelRead:
+    await _workspace_authz(
+        session,
+        workspace_id,
+        permission=Permission.NOTIFICATION_CHANNEL_MANAGE,
+        authz=authz,
+    )
+    channel = await get_notification_channel(
+        session,
+        workspace_id=workspace_id,
+        channel_id=channel_id,
+    )
+    if channel is None:
+        raise NotFoundError("The notification channel was not found.")
+    channel = await update_notification_channel(
+        session,
+        settings=settings,
+        webhook=SafeWebhookClient(settings),
+        channel=channel,
+        principal=principal,
+        name=payload.name,
+        url=payload.url,
+        signing_secret=(
+            payload.signing_secret.get_secret_value()
+            if payload.signing_secret is not None
+            else None
+        ),
+        clear_signing_secret=payload.clear_signing_secret,
     )
     return NotificationChannelRead.model_validate(channel)
 

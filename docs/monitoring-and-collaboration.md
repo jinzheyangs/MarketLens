@@ -86,6 +86,7 @@
 | --- | --- | --- |
 | GET | `/workspaces/{workspace_id}/notification-channels` | `notification_channel:manage` |
 | POST | `/workspaces/{workspace_id}/notification-channels` | `notification_channel:manage` |
+| PATCH | `/workspaces/{workspace_id}/notification-channels/{channel_id}` | `notification_channel:manage` |
 | DELETE | `/workspaces/{workspace_id}/notification-channels/{channel_id}` | `notification_channel:manage` |
 | GET | `/workspaces/{workspace_id}/monitors` | `monitor:read` |
 | POST | `/workspaces/{workspace_id}/monitors` | `monitor:manage`（项目订阅在项目范围检查） |
@@ -103,6 +104,8 @@
 | GET/POST | `/projects/{project_id}/approval-requests` | `approval:read` / `approval:create` |
 | POST | `.../approval-requests/{id}/approve` | 指派对象，或 `approval:decide` + 项目管理员 |
 | POST | `.../approval-requests/{id}/reject` | 同上 |
+| POST | `.../approval-requests/{id}/cancel` | 请求人或项目管理员 |
+| GET | `/operations/queues` | tenant admin (`quota:read`) |
 | GET/PATCH | `/quotas` | tenant admin (`quota:read` / `quota:manage`) |
 
 `monitor:read` 不会从父级角色自动继承到项目监测资源；项目级订阅会回到项目上下文
@@ -137,12 +140,24 @@ Provider 和告警 webhook。
 
 ## 4. 运维与安全注意事项
 
+- 租户管理员可调用 `GET /api/v1/operations/queues` 查看研究、采集、审查、导出、
+  监测、通知、审批、outbox 和 consumer failure 的积压数量；这是 Prometheus
+  worker 指标缺失时的补充排障入口，不替代外部监控。
+- 渠道 URL/签名密钥可通过 PATCH 轮换；密钥轮换使用 `app.ops.notification_keys`。
+
 - 监测 worker 与采集 worker 必须能访问相同的对象存储和数据库；否则无法读取快照。
 - 所有 worker 都应独立配置数据库连接池，避免与 API 争抢连接。
 - 通知重试是 at-least-once；接收方应使用 delivery ID 做幂等。
 - 渠道禁用后不再创建新投递；已排队投递会失败并记录 `channel_disabled`。
-- 轮换 `NOTIFICATION_ENCRYPTION_KEY` 需要先用旧密钥解密、再以新密钥重新加密所有
-  `notification_channels.encrypted_config`；当前版本没有自动多密钥轮换。
+- `PATCH /notification-channels/{id}` 可改名、更换 webhook URL/签名密钥，或清空签名
+  密钥；写操作仍要求工作区管理员，响应永不返回 URL/密钥。
+- 密钥轮换流程：
+  1. 保留旧密钥到 `NOTIFICATION_PREVIOUS_ENCRYPTION_KEY`；
+  2. 将 `NOTIFICATION_ENCRYPTION_KEY` 替换为新密钥；
+  3. `python -m app.ops.notification_keys` 先 dry-run；
+  4. `--execute` 重新加密全部渠道，审计记录 `notification.keys_rotated`；
+  5. 确认无 failed 后移除 previous key。
+  任何无法解密的渠道会计为 failed 并返回非零退出码，不会静默丢失配置。
 - 监测快照中的网页内容仍按不可信输入存储和展示；下游渲染必须转义。
 
 ## 5. 已知限制
@@ -152,7 +167,9 @@ Provider 和告警 webhook。
 - 变更检测基于内容哈希和来源 URL，不做 HTML 语义 diff、价格抽取或实体级变更定位。
 - 通知渠道仅实现 webhook/log；邮件、企业微信、Slack 等适配器需要新增受控 egress
   实现，不能直接复用任意 URL。
-- 通知渠道密钥轮换、密钥版本管理和 KMS 信封加密尚未实现。
-- 配额是软上限：已开始的运行/任务不会被中断；并发窗口内仍可能短暂超过上限一个单位。
-- 审批节点不驱动报告状态机，也不发送站内信；完整工作流编排留待后续阶段。
+- 已支持单把 previous key 的在线轮换，但没有 KMS 信封加密/密钥版本表；轮换期间
+  旧密钥必须保留在进程环境或密钥管理服务中，不能提前删除。
+- 配额是软上限：已开始的运行/任务不会被中断，并发窗口内仍可能短暂超过上限一个单位。
+- 审批节点不驱动报告状态机，也不发送站内信；支持请求人/管理员取消和按状态/指派人
+  过滤，但完整工作流编排仍需后续扩展。
 - 评论不做富文本、附件、@提及和实时推送；正文最大 5000 字符。
