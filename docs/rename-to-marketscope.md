@@ -127,12 +127,31 @@ pip install -e ".[dev]"
 
 ## 3. 本地目录和 GitHub 仓库
 
-本次代码重命名不自动修改本地目录 `D:\endd` 或 GitHub 仓库名。需要时手动执行：
+本次代码重命名不自动修改本地目录 `D:\endd` 或 GitHub 仓库名。
+
+### 本地目录
+
+目录被 Claude Code、终端、uvicorn 或 worker 进程占用时，Windows 不允许重命名。
+先关闭所有使用 `D:\endd` 的进程，然后从**不在 `D:\endd` 内的 PowerShell**执行：
 
 ```powershell
-# 关闭使用该目录的进程后，在父目录执行
+powershell -ExecutionPolicy Bypass -File D:\endd\scripts\rename-local-directory.ps1
+```
+
+脚本会：
+
+1. 重试重命名 `D:\endd` → `D:\MarketScope`；
+2. 在新目录中修复 editable 包元数据；
+3. 打印后续检查命令。
+
+如果脚本提示仍被占用，使用任务管理器关闭 Claude Code/终端/worker，或手动执行：
+
+```powershell
+Set-Location D:\
 Rename-Item D:\endd D:\MarketScope
 ```
+
+### GitHub 仓库
 
 GitHub 仓库可以在 Settings → Repository name 改为 `MarketScope`，然后更新：
 
