@@ -1,4 +1,4 @@
-"""Authorized research run, findings, checkpoint, and trace APIs."""
+"""授权范围内的调研运行、发现、检查点与轨迹接口。"""
 
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
-"""Root tenant registry.
+"""根租户注册表。
 
-Organizations, workspaces, projects, memberships, and roles are intentionally
-deferred to stage 2. This table anchors future ``tenant_id`` foreign keys.
+组织、工作区、项目、成员关系与角色在后续阶段引入。本表用于锚定后续
+外键引用的 ``tenant_id``。
 """
 
 from __future__ import annotations

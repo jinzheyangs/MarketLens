@@ -1,4 +1,4 @@
-"""Event outbox and consumer dead-letter API schemas."""
+"""事件 outbox 与消费者死信接口 Schema。"""
 
 from __future__ import annotations
 

@@ -1,8 +1,7 @@
-"""Server-side RBAC with attribute-based restrictions.
+"""服务端 RBAC 授权，并辅以属性级（ABAC）限制。
 
-Roles are loaded from PostgreSQL memberships. JWT role/permission claims are
-never consulted. Parent roles inherit downward (organization -> workspace ->
-project); descendant access does not grant parent write access.
+角色从 PostgreSQL 成员关系加载；绝不参考 JWT 中的角色/权限声明。父级
+角色向下继承（组织 -> 工作区 -> 项目）；下级访问权不向上授予写权限。
 """
 
 from __future__ import annotations
@@ -124,6 +123,11 @@ class AuthorizationService:
         permission: Permission,
         resource: ResourceContext,
     ) -> AuthorizationDecision:
+        """评估主体对某资源执行某权限是否放行。
+
+        租户管理员直接按最高角色放行；否则取各层级角色中的最高者，
+        先做角色级别比对，再做属性级（ABAC）校验。
+        """
         if self._principal.is_tenant_admin:
             effective_role: ScopeRole | None = ScopeRole.ADMIN
         else:
@@ -173,6 +177,7 @@ class AuthorizationService:
         permission: Permission,
         resource: ResourceContext,
     ) -> ScopeRole | None:
+        """计算主体在该资源上的有效角色（取组织/工作区/项目角色最高者）。"""
         candidates: list[ScopeRole] = []
         org_role = self._principal.organization_roles.get(resource.organization_id)
         if org_role is not None:
@@ -229,6 +234,11 @@ class AuthorizationService:
         resource: ResourceContext,
         effective_role: ScopeRole,
     ) -> str | None:
+        """属性级约束校验：读操作与管理员放行；否则按状态/密级拦截。
+
+        - 组织被暂停、工作区/项目被归档：非管理员不可写；
+        - 机密项目：必须管理员。
+        """
         if _is_read(permission) or effective_role == ScopeRole.ADMIN:
             return None
         if resource.organization_status == OrganizationStatus.SUSPENDED:

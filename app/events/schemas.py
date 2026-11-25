@@ -1,4 +1,4 @@
-"""Versioned domain-event envelope shared by outbox and consumers."""
+"""outbox 与消费者共享的版本化领域事件信封。"""
 
 from __future__ import annotations
 

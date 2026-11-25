@@ -1,4 +1,4 @@
-"""Object storage abstraction: local filesystem and S3-compatible backends.
+"""对象存储抽象：本地文件系统与 S3 兼容后端。
 
 Only server-generated object keys are used. Client filenames are display metadata,
 never path components.

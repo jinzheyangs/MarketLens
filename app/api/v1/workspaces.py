@@ -1,4 +1,4 @@
-"""Workspace endpoints and workspace-scoped memberships."""
+"""工作区接口与工作区级成员关系。"""
 
 from __future__ import annotations
 

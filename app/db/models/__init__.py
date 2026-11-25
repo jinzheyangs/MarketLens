@@ -1,4 +1,4 @@
-"""ORM models. Importing this package registers metadata for Alembic."""
+"""ORM 模型集合。导入本包即向 Alembic 注册全部元数据。"""
 
 from app.db.models.audit import AuditEvent
 from app.db.models.collaboration import ApprovalRequest, ProjectComment

@@ -1,4 +1,4 @@
-"""Review/report persistence and human approval/export operations."""
+"""审查/报告持久化与人工审批/导出操作。"""
 
 from __future__ import annotations
 

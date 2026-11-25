@@ -1,4 +1,4 @@
-"""PostgreSQL-backed per-tenant/domain start-rate limiter.
+"""PostgreSQL 实现的按租户/域名突发速率限制器。
 
 The atomic upsert reserves a slot and returns the time at which the caller may
 proceed. It works across worker processes without relying on an in-memory cache.

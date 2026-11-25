@@ -1,7 +1,7 @@
-"""Unified exception-to-JSON conversion.
+"""统一的异常到 JSON 响应转换。
 
-Every response uses the same ``{"error": {...}}`` envelope with a request ID.
-Validation details contain field locations/types but never echo submitted input.
+所有响应共用 ``{"error": {...}}`` 信封并带请求 ID。校验细节只包含字段
+位置/类型，绝不回显提交的原始输入。
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from app.core.responses import error_response
 
 logger = get_logger(__name__)
 
+# HTTP 状态码 -> 错误码与默认提示的映射
 _HTTP_ERROR_CODES: dict[int, tuple[ErrorCode, str]] = {
     400: (ErrorCode.BAD_REQUEST, "The request is invalid."),
     401: (ErrorCode.UNAUTHORIZED, "Authentication is required."),
@@ -34,9 +35,11 @@ _HTTP_ERROR_CODES: dict[int, tuple[ErrorCode, str]] = {
 
 
 async def _app_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """处理可预期的应用异常 ``AppError``。"""
     if not isinstance(exc, AppError):  # pragma: no cover - defensive
         return await _unhandled_exception_handler(request, exc)
 
+    # 5xx 级别错误记为错误日志
     if exc.status_code >= 500:
         logger.error(
             "application_error",
@@ -60,6 +63,7 @@ async def _app_error_handler(request: Request, exc: Exception) -> JSONResponse:
 
 
 async def _validation_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """处理请求参数校验错误，汇总字段位置与错误类型。"""
     if not isinstance(exc, RequestValidationError):  # pragma: no cover - defensive
         return await _unhandled_exception_handler(request, exc)
 
@@ -92,6 +96,7 @@ async def _validation_error_handler(request: Request, exc: Exception) -> JSONRes
 
 
 async def _http_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """处理 Starlette 内置 HTTP 异常，映射到统一错误码。"""
     if not isinstance(exc, StarletteHTTPException):  # pragma: no cover - defensive
         return await _unhandled_exception_handler(request, exc)
 
@@ -111,6 +116,7 @@ async def _http_exception_handler(request: Request, exc: Exception) -> JSONRespo
 
 
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """兜底处理未预期异常：记录堆栈，对外仅返回通用 500 信封。"""
     logger.error(
         "unhandled_exception",
         extra={
@@ -129,6 +135,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 
 
 def register_exception_handlers(app: FastAPI) -> None:
+    """向应用注册各类异常处理器。"""
     app.add_exception_handler(AppError, _app_error_handler)
     app.add_exception_handler(RequestValidationError, _validation_error_handler)
     app.add_exception_handler(StarletteHTTPException, _http_exception_handler)

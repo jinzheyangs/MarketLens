@@ -1,10 +1,4 @@
-"""Bounded retention job for operational event/audit-adjacent tables.
-
-This job intentionally never deletes business artifacts (reports, evidence,
-claims, comments, monitor changes, documents). Those require a tenant-specific
-data-lifecycle decision. Destructive mode is opt-in with
-``RETENTION_DESTRUCTIVE_ENABLED=true`` and ``--execute``.
-"""
+"""运维类事件/审计邻近表的有限期保留任务。"""
 
 from __future__ import annotations
 

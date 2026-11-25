@@ -1,4 +1,4 @@
-"""Untrusted upload validation and format-specific text extraction."""
+"""不可信上传校验与按格式提取文本。"""
 
 from __future__ import annotations
 

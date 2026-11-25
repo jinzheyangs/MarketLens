@@ -1,4 +1,4 @@
-"""User and principal schemas."""
+"""用户与主体 Schema。"""
 
 from __future__ import annotations
 

@@ -1,9 +1,8 @@
-"""Durable research runner: DB leases, LangGraph streaming, and checkpoints.
+"""持久化调研 runner：数据库租约、LangGraph 流式执行与检查点。
 
-LangGraph owns in-graph control flow. This module persists the full JSON state
-after each superstep (checkpoint), so pause/resume and crash recovery do not
-depend on in-process memory. Native LangGraph checkpoint tables are intentionally
-not used because they would bypass the tenant/RLS model.
+图内控制流由 LangGraph 负责。本模块在每个 superstep 后把完整 JSON 状态
+持久化（检查点），使暂停/恢复与崩溃恢复不依赖进程内存。这里刻意不使用
+LangGraph 原生检查点表，因为那会绕开租户/RLS 模型。
 """
 
 from __future__ import annotations
@@ -76,6 +75,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class RunControl:
+    """运行控制信号：是否请求暂停 / 取消。"""
+
     pause_requested: bool
     cancel_requested: bool
     status: str
@@ -88,6 +89,8 @@ _EDITOR_ROLES = frozenset({ScopeRole.EDITOR, ScopeRole.ADMIN})
 
 @dataclass(frozen=True, slots=True)
 class PreparedRun:
+    """准备就绪的调研运行：记录、主体、文档访问范围与能力快照。"""
+
     run: ResearchRun
     principal: Principal
     document_scope: DocumentAccessScope | None
@@ -97,12 +100,14 @@ class PreparedRun:
 
 
 def _safe_state_error(exc: Exception) -> tuple[str, str]:
+    """把异常映射为错误码与可安全对外的提示。"""
     if isinstance(exc, AgentError):
         return exc.code, exc.safe_message
     return "internal_error", "The research run failed."
 
 
 def _iso_now() -> datetime:
+    """当前 UTC 时间。"""
     return datetime.now(UTC)
 
 
@@ -113,6 +118,7 @@ def _capability_snapshot(
     workspace_id: UUID,
     document_scope: DocumentAccessScope | None,
 ) -> CapabilitySnapshot:
+    """快照主体在该工作区/项目上的访问与写权限（用于审计与轨迹记录）。"""
     org_role = principal.organization_roles.get(organization_id)
     workspace_role = principal.workspace_roles.get(workspace_id)
     workspace_access = (
@@ -144,6 +150,7 @@ def _capability_snapshot(
 
 
 class ResearchRunner:
+    """调研运行后台执行器：抢租约、跑图、落检查点与发现、收尾入审查队列。"""
     def __init__(
         self,
         *,
@@ -156,6 +163,7 @@ class ResearchRunner:
         self._worker_id = f"{uuid4().hex[:12]}"
 
     async def run_forever(self) -> None:
+        """后台主循环：持续轮询并处理待执行调研，异常后退避重启。"""
         while True:
             try:
                 processed = await self.run_once()
@@ -166,6 +174,7 @@ class ResearchRunner:
                 await asyncio.sleep(self._settings.agent_poll_interval_seconds)
 
     async def run_once(self, *, tenant_ids: Sequence[UUID] | None = None) -> int:
+        """轮询一轮：抢占到期/待处理运行并逐个执行，返回本轮处理数量。"""
         runs = await self._claim_runs(
             self._settings.agent_max_concurrent_runs,
             tenant_ids=tenant_ids,
@@ -197,6 +206,7 @@ class ResearchRunner:
         *,
         tenant_ids: Sequence[UUID] | None = None,
     ) -> list[ResearchRun]:
+        """在数据库中抢占可执行运行（行锁跳过 + 租约回收），返回被抢到的记录。"""
         async with self._session_factory() as session:
             tenant_statement = select(Tenant.id).where(Tenant.status == "active")
             if tenant_ids is not None:
@@ -270,6 +280,7 @@ class ResearchRunner:
         return claimed
 
     async def _prepare_run(self, run_id: UUID) -> PreparedRun | None:
+        """加载并校验运行记录、主体、文档范围与能力快照；不可执行则返回 None。"""
         async with self._session_factory() as session:
             run = cast(
                 ResearchRun | None,
@@ -391,6 +402,7 @@ class ResearchRunner:
             )
 
     async def _execute_run(self, run_id: UUID) -> None:
+        """执行一次调研：加载/初始化状态、跑编排图、保存检查点与发现并收尾。"""
         prepared = await self._prepare_run(run_id)
         if prepared is None:
             return
@@ -552,6 +564,7 @@ class ResearchRunner:
         await self._finish_from_state(run.id, last_state)
 
     async def _capabilities_unchanged(self, prepared: PreparedRun) -> bool:
+        """复核当前主体权限与运行启动时快照是否一致，避免中途失权继续跑。"""
         run = prepared.run
         async with self._session_factory() as session:
             try:
@@ -608,6 +621,7 @@ class ResearchRunner:
             return snapshot == prepared.capability_snapshot
 
     async def _load_or_initial_state(self, run: ResearchRun) -> dict[str, Any]:
+        """从最近检查点恢复状态；无检查点则构造初始状态。"""
         async with self._session_factory() as session:
             checkpoint = cast(
                 ResearchCheckpoint | None,
@@ -642,6 +656,7 @@ class ResearchRunner:
         )
 
     async def _read_control(self, run_id: UUID) -> RunControl:
+        """读取运行上的暂停/取消请求信号。"""
         async with self._session_factory() as session:
             row = (
                 await session.execute(
@@ -657,6 +672,7 @@ class ResearchRunner:
         return RunControl(bool(row[0]), bool(row[1]), str(row[2]))
 
     async def _heartbeat_loop(self, run_id: UUID) -> None:
+        """后台心跳：周期性续租并刷新运行心跳，防止被其他 worker 接管。"""
         interval = max(5.0, self._settings.agent_run_lease_seconds / 3)
         while True:
             await asyncio.sleep(interval)
@@ -691,6 +707,7 @@ class ResearchRunner:
         *,
         node: str,
     ) -> None:
+        """把当前完整 JSON 状态写入一条检查点记录，并更新 run 主记录快照。"""
         payload = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
         if len(payload.encode("utf-8")) > self._settings.agent_max_checkpoint_bytes:
             raise AgentError("The research checkpoint exceeded its size limit.")
@@ -746,6 +763,7 @@ class ResearchRunner:
         run: ResearchRun,
         state: dict[str, Any],
     ) -> None:
+        """把状态中去重后的发现落库为 ResearchFinding 记录。"""
         workspace_id = run.workspace_id
         project_id = run.project_id
         for finding in unique_findings(cast(ResearchState, state)):
@@ -833,6 +851,7 @@ class ResearchRunner:
         *,
         forced_status: ResearchRunStatus | None = None,
     ) -> None:
+        """依据最终状态判定运行终态（完成/部分失败/失败/无发现）并收尾。"""
         unique = unique_findings(cast(ResearchState, state))
         latest = latest_task_results(cast(ResearchState, state))
         reason = state.get("stop_reason")
@@ -877,6 +896,7 @@ class ResearchRunner:
         state: dict[str, Any] | None = None,
         finding_count: int = 0,
     ) -> None:
+        """把运行记录更新为指定终态并清理租约、记录完成时间。"""
         async with self._session_factory() as session, session.begin():
             run = cast(
                 ResearchRun | None,
@@ -988,6 +1008,7 @@ class ResearchRunner:
             await session.flush()
 
     async def _finish_paused(self, run_id: UUID) -> None:
+        """把运行标记为暂停，保留状态供后续恢复。"""
         async with self._session_factory() as session, session.begin():
             run = cast(
                 ResearchRun | None,
@@ -1022,6 +1043,7 @@ class ResearchRunner:
             await session.flush()
 
     async def _finish_canceled(self, run_id: UUID) -> None:
+        """把运行标记为已取消。"""
         async with self._session_factory() as session, session.begin():
             run = cast(
                 ResearchRun | None,
@@ -1069,6 +1091,7 @@ class ResearchRunner:
         message: str,
         state: dict[str, Any] | None = None,
     ) -> None:
+        """把运行标记为失败，记录错误码/信息并清理租约。"""
         async with self._session_factory() as session, session.begin():
             current = cast(
                 ResearchRun | None,

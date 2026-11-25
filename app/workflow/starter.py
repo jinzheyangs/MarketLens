@@ -1,4 +1,4 @@
-"""Start Temporal workflows from the transactional outbox exactly once."""
+"""从事务性 outbox 精确一次地启动 Temporal 工作流。"""
 
 from __future__ import annotations
 

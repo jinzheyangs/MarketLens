@@ -1,4 +1,4 @@
-"""Collector service assembly and tenant-scoped task/source operations."""
+"""采集服务装配与租户范围的任务/来源操作。"""
 
 from __future__ import annotations
 

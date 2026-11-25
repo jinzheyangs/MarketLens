@@ -1,9 +1,4 @@
-"""Deterministic evidence-review rules.
-
-These rules are intentionally independent of any model narrative. A model may
-never turn a missing/unavailable citation into a supported claim; semantic
-conflict detection is a conservative lexical heuristic in this stage.
-"""
+"""确定性证据审查规则。"""
 
 from __future__ import annotations
 

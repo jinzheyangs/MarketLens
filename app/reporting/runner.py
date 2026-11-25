@@ -1,4 +1,4 @@
-"""Durable review and export workers for reports."""
+"""报告审查与导出的持久化 worker。"""
 
 from __future__ import annotations
 

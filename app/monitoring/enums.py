@@ -1,4 +1,4 @@
-"""Monitoring, change, notification, and quota enums."""
+"""监测、变更、通知与配额枚举。"""
 
 from __future__ import annotations
 

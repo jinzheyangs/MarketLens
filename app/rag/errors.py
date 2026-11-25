@@ -1,4 +1,4 @@
-"""Safe error types for untrusted document ingestion."""
+"""不可信文档入库的安全错误类型。"""
 
 from __future__ import annotations
 

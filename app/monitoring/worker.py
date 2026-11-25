@@ -1,4 +1,4 @@
-"""Scheduled monitoring, change detection, and notification delivery worker."""
+"""定时监测、变更检测与通知投递 worker。"""
 
 from __future__ import annotations
 

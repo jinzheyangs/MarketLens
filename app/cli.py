@@ -1,9 +1,4 @@
-"""Administrative bootstrap CLI.
-
-There is intentionally no HTTP bootstrap endpoint and no auto-provisioning on
-login: a platform operator creates the first tenant and tenant administrator,
-after which tenant administrators manage users through the audited API.
-"""
+"""管理员引导命令行工具（开通租户、预置用户等）。"""
 
 from __future__ import annotations
 

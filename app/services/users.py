@@ -1,4 +1,4 @@
-"""Tenant user provisioning and principal-facing views."""
+"""租户用户预置与面向主体的视图。"""
 
 from __future__ import annotations
 

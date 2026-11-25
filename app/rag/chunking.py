@@ -1,4 +1,4 @@
-"""Deterministic paragraph-aware chunking with citation offsets."""
+"""确定性的段落感知分块，保留引用偏移定位。"""
 
 from __future__ import annotations
 

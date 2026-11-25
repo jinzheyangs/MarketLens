@@ -1,4 +1,4 @@
-"""At-rest encryption for tenant notification channel configuration."""
+"""租户通知渠道配置的静态加密。"""
 
 from __future__ import annotations
 

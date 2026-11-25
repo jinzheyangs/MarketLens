@@ -1,4 +1,4 @@
-"""Temporal activities that drive the existing durable research workers."""
+"""驱动现有持久化调研 worker 的 Temporal 活动。"""
 
 from __future__ import annotations
 

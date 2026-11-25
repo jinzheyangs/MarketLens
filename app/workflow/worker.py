@@ -1,4 +1,4 @@
-"""Temporal worker process and report-queue safety loop."""
+"""Temporal worker 进程与报告队列安全循环。"""
 
 from __future__ import annotations
 

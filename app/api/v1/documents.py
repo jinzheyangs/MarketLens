@@ -1,4 +1,4 @@
-"""Document upload, indexing, lifecycle, and hybrid search endpoints."""
+"""文档上传、索引、生命周期与混合检索接口。"""
 
 from __future__ import annotations
 

@@ -1,9 +1,7 @@
-"""Reusable ORM mixins.
+"""可复用的 ORM 混入字段。
 
-Every future business table must inherit ``TenantScopedMixin``. The ``tenant_id``
-column is non-nullable and indexed; ORM writes are additionally guarded by
-``app.db.tenant_guard``. Full SQL/RLS enforcement is introduced with the identity
-layer in stage 2.
+后续所有业务表都应继承 ``TenantScopedMixin``。``tenant_id`` 列非空并建索引；
+ORM 写入另由 ``app.db.tenant_guard`` 守卫。完整的 SQL/RLS 强制由身份层补齐。
 """
 
 from __future__ import annotations
@@ -16,6 +14,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 
 class UUIDPrimaryKeyMixin:
+    """自带 UUID 主键（默认生成 uuid4）。"""
+
     id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True),
         primary_key=True,
@@ -24,6 +24,8 @@ class UUIDPrimaryKeyMixin:
 
 
 class TimestampMixin:
+    """自带创建时间与最后更新时间，更新时自动刷新 ``updated_at``。"""
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -38,6 +40,8 @@ class TimestampMixin:
 
 
 class TenantScopedMixin:
+    """租户范围混入：每张业务表都带归属租户 ID 并建立外键与索引。"""
+
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("tenants.id", ondelete="RESTRICT"),

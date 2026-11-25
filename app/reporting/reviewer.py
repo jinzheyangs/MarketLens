@@ -1,4 +1,4 @@
-"""Rule-based evidence review with mandatory citation/source checks."""
+"""基于规则的证据审查：强制引用/来源校验。"""
 
 from __future__ import annotations
 

@@ -1,9 +1,4 @@
-"""Audit event persistence.
-
-Successful mutations write an audit row in the same transaction as the change.
-Authorization denials are written through a separate short transaction so they
-survive the rollback of the denied request.
-"""
+"""审计事件持久化。"""
 
 from __future__ import annotations
 

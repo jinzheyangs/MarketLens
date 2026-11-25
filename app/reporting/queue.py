@@ -1,4 +1,4 @@
-"""Queue evidence reviews when research runs reach a terminal state."""
+"""调研运行进入终态时排队证据审查。"""
 
 from __future__ import annotations
 

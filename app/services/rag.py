@@ -1,4 +1,4 @@
-"""Document ingestion, indexing, deletion propagation, and hybrid search."""
+"""文档入库、索引、删除传播与混合检索服务。"""
 
 from __future__ import annotations
 

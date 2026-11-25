@@ -1,4 +1,4 @@
-"""Audit API schemas."""
+"""审计接口 Schema。"""
 
 from __future__ import annotations
 

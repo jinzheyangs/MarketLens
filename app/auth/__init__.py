@@ -1,1 +1,1 @@
-"""Authentication and authorization boundaries."""
+"""鉴权与授权边界模块。"""

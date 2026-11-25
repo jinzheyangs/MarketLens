@@ -1,4 +1,4 @@
-"""Transactional outbox dispatcher with leases, backoff, and dead-letter state."""
+"""事务性 outbox 派发器：租约、退避重试与死信状态。"""
 
 from __future__ import annotations
 

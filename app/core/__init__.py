@@ -1,1 +1,1 @@
-"""Cross-cutting infrastructure: configuration, context, errors, logging, telemetry."""
+"""跨领域基础设施：配置、上下文、错误、日志、遥测等公共能力。"""

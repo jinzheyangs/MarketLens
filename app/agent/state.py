@@ -1,4 +1,4 @@
-"""Structured, JSON-serializable LangGraph state and budget helpers."""
+"""结构化、可 JSON 序列化的 LangGraph 状态与预算辅助函数。"""
 
 from __future__ import annotations
 
@@ -12,33 +12,39 @@ from app.core.config import Settings
 
 
 class ResearchState(TypedDict, total=False):
-    run_id: str
-    objective: str
+    """调研编排的共享状态（在各节点间流转，最终随检查点落库）。"""
+
+    run_id: str  # 调研运行 ID
+    objective: str  # 研究目标
     workspace_id: str
     project_id: str | None
-    round: int
-    round_start_findings: int
-    plan: list[dict[str, Any]]
-    findings: Annotated[list[dict[str, Any]], operator.add]
-    task_results: Annotated[list[dict[str, Any]], operator.add]
-    errors: Annotated[list[dict[str, Any]], operator.add]
-    usage: Annotated[list[dict[str, Any]], operator.add]
-    phase: str
-    stop_reason: str | None
-    request_new_plan: bool
-    request_retry: bool
-    aggregate_needed: bool
-    budget: dict[str, Any]
+    round: int  # 当前规划/执行轮次
+    round_start_findings: int  # 本轮开始时的发现数
+    plan: list[dict[str, Any]]  # 当前轮任务计划
+    # 以下列表通过 operator.add 在节点返回时累加，而非整体覆盖
+    findings: Annotated[list[dict[str, Any]], operator.add]  # 已产出发现
+    task_results: Annotated[list[dict[str, Any]], operator.add]  # 各任务结果
+    errors: Annotated[list[dict[str, Any]], operator.add]  # 错误记录
+    usage: Annotated[list[dict[str, Any]], operator.add]  # 用量事件
+    phase: str  # 当前阶段
+    stop_reason: str | None  # 停止原因
+    request_new_plan: bool  # 是否需要重新规划
+    request_retry: bool  # 是否需要重试失败任务
+    aggregate_needed: bool  # 是否待汇总
+    budget: dict[str, Any]  # 预算与限额
 
 
 @dataclass(frozen=True, slots=True)
 class UsageTotals:
+    """用量累计值：输入/输出 token、成本（微）、工具调用次数。"""
+
     input_tokens: int
     output_tokens: int
     cost_micros: int
     tool_calls: int
 
     def as_dict(self) -> dict[str, int]:
+        """转为可落库的字典。"""
         return {
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
@@ -48,6 +54,7 @@ class UsageTotals:
 
 
 def budget_for_settings(settings: Settings) -> dict[str, Any]:
+    """从配置构建本次调研的预算与限额字典。"""
     return {
         "max_rounds": settings.agent_max_rounds,
         "max_parallel_tasks": settings.agent_max_parallel_tasks,
@@ -77,6 +84,7 @@ def initial_state(
     project_id: UUID | None,
     settings: Settings,
 ) -> dict[str, Any]:
+    """构造调研运行的初始状态。"""
     return {
         "run_id": str(run_id),
         "objective": objective,
@@ -104,6 +112,7 @@ def model_cost_micros(
     output_tokens: int,
     budget: dict[str, Any],
 ) -> int:
+    """按每千 token 单价估算模型成本（单位：微），向上取整。"""
     input_rate = int(budget.get("input_cost_micros_per_1k", 0))
     output_rate = int(budget.get("output_cost_micros_per_1k", 0))
     return max(
@@ -113,6 +122,7 @@ def model_cost_micros(
 
 
 def usage_totals(state: ResearchState) -> UsageTotals:
+    """汇总当前状态中的 token、成本与工具调用总量。"""
     input_tokens = 0
     output_tokens = 0
     cost_micros = 0
@@ -130,6 +140,7 @@ def usage_totals(state: ResearchState) -> UsageTotals:
 
 
 def budget_exhausted(state: ResearchState) -> bool:
+    """判断是否已触及 token / 成本 / 工具调用任一预算上限。"""
     budget = state.get("budget", {})
     totals = usage_totals(state)
     max_cost = int(budget.get("max_cost_micros", 0))
@@ -142,6 +153,7 @@ def budget_exhausted(state: ResearchState) -> bool:
 
 
 def latest_task_results(state: ResearchState) -> dict[str, dict[str, Any]]:
+    """按 task_id 取每个任务最近一次执行结果（后写覆盖先写）。"""
     latest: dict[str, dict[str, Any]] = {}
     for result in state.get("task_results", []):
         task_id = result.get("task_id")
@@ -151,6 +163,7 @@ def latest_task_results(state: ResearchState) -> dict[str, dict[str, Any]]:
 
 
 def unique_findings(state: ResearchState) -> list[dict[str, Any]]:
+    """按 finding_key 去重，保持出现顺序。"""
     unique: list[dict[str, Any]] = []
     seen: set[str] = set()
     for finding in state.get("findings", []):
@@ -163,6 +176,7 @@ def unique_findings(state: ResearchState) -> list[dict[str, Any]]:
 
 
 def find_plan_task(state: ResearchState, task_id: str) -> dict[str, Any] | None:
+    """在当前计划中按 task_id 查找任务定义。"""
     for task in state.get("plan", []):
         if task.get("task_id") == task_id:
             return task
@@ -170,6 +184,7 @@ def find_plan_task(state: ResearchState, task_id: str) -> dict[str, Any] | None:
 
 
 def role_from_task(task: dict[str, Any]) -> AgentRole:
+    """解析任务上的专业 Agent 角色，非法值抛错。"""
     role = task.get("agent_role")
     if isinstance(role, str):
         try:
@@ -177,6 +192,20 @@ def role_from_task(task: dict[str, Any]) -> AgentRole:
         except ValueError:
             pass
     raise ValueError("plan task has an invalid agent role")
+
+
+def unresolved_errors(state: ResearchState) -> list[dict[str, Any]]:
+    """尚未被同一任务后续成功尝试取代的错误记录。"""
+    latest = latest_task_results(state)
+    unresolved: list[dict[str, Any]] = []
+    for error in state.get("errors", []):
+        task_id = error.get("task_id")
+        if isinstance(task_id, str):
+            result = latest.get(task_id)
+            if result is not None and result.get("status") == "succeeded":
+                continue
+        unresolved.append(error)
+    return unresolved
 
 
 __all__ = [
@@ -193,17 +222,3 @@ __all__ = [
     "unresolved_errors",
     "usage_totals",
 ]
-
-
-def unresolved_errors(state: ResearchState) -> list[dict[str, Any]]:
-    """Errors not superseded by a later successful attempt of the same task."""
-    latest = latest_task_results(state)
-    unresolved: list[dict[str, Any]] = []
-    for error in state.get("errors", []):
-        task_id = error.get("task_id")
-        if isinstance(task_id, str):
-            result = latest.get(task_id)
-            if result is not None and result.get("status") == "succeeded":
-                continue
-        unresolved.append(error)
-    return unresolved

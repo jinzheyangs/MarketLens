@@ -1,4 +1,4 @@
-"""Embedding provider abstraction.
+"""向量嵌入（embedding）供应商抽象。
 
 The hash provider is deterministic and exists for development/tests only.
 Production validation refuses it and requires an HTTP embedding endpoint.

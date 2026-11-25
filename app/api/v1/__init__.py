@@ -1,1 +1,1 @@
-"""Versioned business API."""
+"""带版本前缀的业务 API。"""

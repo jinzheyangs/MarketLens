@@ -1,4 +1,4 @@
-"""Value objects shared by ingestion, indexing, and retrieval."""
+"""入库、索引与检索共享的值对象。"""
 
 from __future__ import annotations
 

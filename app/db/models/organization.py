@@ -1,4 +1,4 @@
-"""Organizations: tenant-scoped top-level business containers."""
+"""组织：租户范围内最顶层的业务容器。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Tenant-scoped operational queue and backlog snapshot."""
+"""租户范围的运维队列与积压快照。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""SSRF-safe URL validation, DNS pinning, HTTP fetching, and robots policy.
+"""防 SSRF 的 URL 校验、DNS 固定、HTTP 抓取与 robots 策略。
 
 The fetcher deliberately does not use a general HTTP client that re-resolves DNS
 after validation. It resolves once, rejects any non-public answer, and connects

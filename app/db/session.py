@@ -1,4 +1,4 @@
-"""Async engine and session factory construction."""
+"""异步数据库引擎与会话工厂构建。"""
 
 from __future__ import annotations
 
@@ -13,10 +13,9 @@ from app.core.config import Settings
 
 
 def create_engine(settings: Settings) -> AsyncEngine:
-    """Create a pooled async engine.
+    """创建带连接池的异步引擎。
 
-    Connection establishment and statement timeouts are bounded. The password is
-    supplied only through ``DATABASE_URL`` and is never logged.
+    连接建立与语句超时均有上限；密码仅通过 ``DATABASE_URL`` 提供，绝不记录到日志。
     """
     return create_async_engine(
         settings.database_url_str,
@@ -38,4 +37,5 @@ def create_engine(settings: Settings) -> AsyncEngine:
 
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """构造异步会话工厂：提交后不过期对象、关闭自动 flush。"""
     return async_sessionmaker(engine, expire_on_commit=False, autoflush=False)

@@ -1,4 +1,4 @@
-"""Project comments and approval-node API schemas."""
+"""项目评论与审批节点接口 Schema。"""
 
 from __future__ import annotations
 

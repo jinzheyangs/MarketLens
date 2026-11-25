@@ -1,4 +1,4 @@
-"""Tenant quotas enforced with row/advisory locks."""
+"""租户配额：基于行锁/咨询锁强制校验。"""
 
 from __future__ import annotations
 

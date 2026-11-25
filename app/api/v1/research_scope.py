@@ -1,4 +1,4 @@
-"""Shared workspace/project/run authorization helpers for research APIs."""
+"""调研接口共享的工作区/项目/运行授权辅助。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Project comments and approval nodes."""
+"""项目评论与审批节点。"""
 
 from __future__ import annotations
 

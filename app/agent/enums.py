@@ -1,4 +1,4 @@
-"""Domain enums for research runs, agents, tools, and findings."""
+"""调研运行、Agent、工具与发现结论的领域枚举。"""
 
 from __future__ import annotations
 

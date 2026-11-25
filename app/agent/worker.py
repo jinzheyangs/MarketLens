@@ -1,4 +1,8 @@
-"""Durable research worker CLI (``python -m app.agent.worker``)."""
+"""持久化调研 worker 命令行入口（``python -m app.agent.worker``）。
+
+同一进程内依次调度调研、证据审查与报告导出三类后台任务；
+启用 Temporal 时改由工作流 worker 接管长流程编排。
+"""
 
 from __future__ import annotations
 

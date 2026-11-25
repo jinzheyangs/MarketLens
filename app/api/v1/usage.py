@@ -1,4 +1,4 @@
-"""Tenant cost attribution and usage reporting."""
+"""租户成本归集与用量上报接口。"""
 
 from __future__ import annotations
 

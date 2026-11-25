@@ -1,4 +1,4 @@
-"""Safe collector errors with retry classification."""
+"""采集器安全错误类型，带可重试分类。"""
 
 from __future__ import annotations
 

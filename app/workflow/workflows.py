@@ -1,4 +1,4 @@
-"""Deterministic Temporal workflow for research and report lifecycle."""
+"""调研与报告生命周期的确定性 Temporal 工作流。"""
 
 from __future__ import annotations
 

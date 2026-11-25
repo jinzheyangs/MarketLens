@@ -1,4 +1,4 @@
-"""Deterministic, citation-indexed report generation."""
+"""确定性、带引用索引的报告生成器。"""
 
 from __future__ import annotations
 

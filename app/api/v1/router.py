@@ -1,8 +1,7 @@
-"""Versioned API router.
+"""带版本前缀的 API 总路由。
 
-Authentication and principal loading are applied at the router level so new
-business routes are protected by default. Authorization is enforced per action
-inside each endpoint.
+鉴权与主体加载在路由级别统一应用，新增业务路由默认受保护；具体授权
+由各接口内部按动作执行校验。
 """
 
 from __future__ import annotations
@@ -30,10 +29,12 @@ from app.api.v1 import (
 )
 from app.auth.dependencies import bearer_scheme, get_principal
 
+# 总路由：统一挂载 Bearer 认证与主体解析依赖
 router = APIRouter(
     dependencies=[Security(bearer_scheme), Depends(get_principal)],
 )
 
+# 逐域挂载子路由
 router.include_router(me.router)
 router.include_router(users.router)
 router.include_router(organizations.router)

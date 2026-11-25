@@ -1,4 +1,4 @@
-"""Health probe response schemas."""
+"""健康探针响应 Schema。"""
 
 from __future__ import annotations
 

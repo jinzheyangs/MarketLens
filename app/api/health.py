@@ -1,4 +1,4 @@
-"""Unauthenticated liveness/readiness probes for orchestrators."""
+"""供编排平台调用的未鉴权存活/就绪探针。"""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 
 def _service(request: Request) -> HealthService:
+    """取用应用挂载的健康检查服务。"""
     service = getattr(request.app.state, "health_service", None)
     if service is None:
         raise RuntimeError("Health service is not initialized")
@@ -26,6 +27,7 @@ def _service(request: Request) -> HealthService:
     summary="Liveness probe",
 )
 async def liveness(request: Request) -> LivenessResponse:
+    """存活探针：进程是否在运行。"""
     return await _service(request).liveness()
 
 
@@ -41,6 +43,7 @@ async def liveness(request: Request) -> LivenessResponse:
     },
 )
 async def readiness(request: Request) -> Response:
+    """就绪探针：必需依赖是否可用；不可用时返回 503。"""
     report = await _service(request).readiness()
     status_code = 200 if report.status == "ok" else 503
     return JSONResponse(

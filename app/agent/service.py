@@ -1,4 +1,4 @@
-"""Research run persistence, authorization-facing operations, and assembly."""
+"""调研运行的持久化、面向授权层的操作与服务装配。"""
 
 from __future__ import annotations
 
@@ -41,6 +41,7 @@ _REQUEST_KEY_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 
 @dataclass(slots=True)
 class AgentServices:
+    """Agent 领域服务集合：配置、模型供应商、会话工厂与依赖的外部服务。"""
     settings: Settings
     model: ResearchModel
     session_factory: async_sessionmaker[AsyncSession]
@@ -58,6 +59,7 @@ def build_agent_services(
     rag_services: RagServices | None = None,
     collector_services: CollectorServices | None = None,
 ) -> AgentServices:
+    """装配 Agent 服务集合。"""
     return AgentServices(
         settings=settings,
         model=build_model_provider(settings),
@@ -68,6 +70,7 @@ def build_agent_services(
 
 
 def validate_request_key(value: str | None) -> str | None:
+    """校验幂等键格式（安全字符集、长度）；空值返回 None。"""
     if value is None:
         return None
     candidate = value.strip()
@@ -88,6 +91,7 @@ async def create_run(
     request_key: str | None,
     settings: Settings,
 ) -> ResearchRun:
+    """创建调研运行：校验目标/幂等键、检查配额、落库并写审计。"""
     normalized_objective = objective.strip()
     if not normalized_objective:
         raise AppError(
@@ -203,6 +207,7 @@ async def get_run(
     workspace_id: UUID,
     for_update: bool = False,
 ) -> ResearchRun | None:
+    """按 ID + 工作区范围查询运行记录（可加行锁）。"""
     statement = tenant_scoped_select(ResearchRun).where(
         ResearchRun.id == run_id,
         ResearchRun.workspace_id == workspace_id,
@@ -218,6 +223,7 @@ async def require_run(
     run_id: UUID,
     workspace_id: UUID,
 ) -> ResearchRun:
+    """查询运行记录，不存在则抛 404。"""
     run = await get_run(session, run_id=run_id, workspace_id=workspace_id)
     if run is None:
         raise NotFoundError("The research run was not found.")
@@ -233,6 +239,7 @@ async def list_runs(
     limit: int,
     offset: int,
 ) -> list[ResearchRun]:
+    """按工作区/项目/状态分页列出调研运行。"""
     statement = tenant_scoped_select(ResearchRun).where(ResearchRun.workspace_id == workspace_id)
     if project_id is not None:
         statement = statement.where(ResearchRun.project_id == project_id)
@@ -253,6 +260,7 @@ async def list_findings(
     limit: int,
     offset: int,
 ) -> list[ResearchFinding]:
+    """分页列出某次运行的发现结论。"""
     statement = (
         tenant_scoped_select(ResearchFinding)
         .where(ResearchFinding.run_id == run_id)
@@ -270,6 +278,7 @@ async def list_checkpoints(
     limit: int,
     offset: int,
 ) -> list[ResearchCheckpoint]:
+    """按序号分页列出某次运行的检查点。"""
     statement = (
         tenant_scoped_select(ResearchCheckpoint)
         .where(ResearchCheckpoint.run_id == run_id)
@@ -287,6 +296,7 @@ async def list_tool_calls(
     limit: int,
     offset: int,
 ) -> list[ResearchToolCall]:
+    """分页列出某次运行的工具调用轨迹。"""
     statement = (
         tenant_scoped_select(ResearchToolCall)
         .where(ResearchToolCall.run_id == run_id)
@@ -305,6 +315,7 @@ def _audit_control(
     action: AuditAction,
     details: dict[str, object] | None = None,
 ) -> None:
+    """写入一条调研运行相关的审计事件。"""
     record_event(
         session,
         tenant_id=principal.tenant_id,
@@ -322,6 +333,7 @@ async def pause_run(
     run: ResearchRun,
     principal: Principal,
 ) -> ResearchRun:
+    """请求暂停运行；运行中则置暂停标志，否则直接置为暂停状态。"""
     if run.status in {status.value for status in TERMINAL_RUN_STATUSES}:
         raise ConflictError("A terminal research run cannot be paused.")
     if run.status == ResearchRunStatus.PAUSED.value:
@@ -361,6 +373,7 @@ async def resume_run(
     run: ResearchRun,
     principal: Principal,
 ) -> ResearchRun:
+    """恢复暂停的运行：重置控制标志与错误状态，回到待执行。"""
     if run.status != ResearchRunStatus.PAUSED.value:
         raise ConflictError("Only a paused research run can be resumed.")
     run.status = ResearchRunStatus.PENDING.value
@@ -392,6 +405,7 @@ async def cancel_run(
     run: ResearchRun,
     principal: Principal,
 ) -> ResearchRun:
+    """请求取消运行；运行中则置取消标志，否则直接置为已取消。"""
     if run.status == ResearchRunStatus.CANCELED.value:
         return run
     if run.status in {status.value for status in TERMINAL_RUN_STATUSES}:
@@ -429,6 +443,7 @@ async def cancel_run(
 
 
 def run_usage(run: ResearchRun) -> dict[str, int]:
+    """提取运行的用量汇总（token、成本、工具调用数）。"""
     usage = run.usage if isinstance(run.usage, dict) else {}
     return {
         "input_tokens": int(usage.get("input_tokens", 0)),

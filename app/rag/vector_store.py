@@ -1,4 +1,4 @@
-"""Qdrant vector store with candidate-stage tenant/ACL payload filters."""
+"""Qdrant 向量库：候选阶段按租户/ACL 载荷过滤。"""
 
 from __future__ import annotations
 

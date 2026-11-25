@@ -1,4 +1,4 @@
-"""Request principal loaded from PostgreSQL, not from JWT authorization claims."""
+"""请求主体（Principal）：从 PostgreSQL 加载，而非取自 JWT 授权声明。"""
 
 from __future__ import annotations
 
@@ -30,6 +30,8 @@ from app.db.models import (
 
 @dataclass(frozen=True, slots=True)
 class Principal:
+    """当前请求的已鉴权主体：身份信息 + 各层级角色与可见范围。"""
+
     user_id: UUID
     tenant_id: UUID
     tenant_slug: str
@@ -40,25 +42,29 @@ class Principal:
     email: str
     display_name: str
     tenant_role: TenantRole
+    # 各层级角色映射：资源 ID -> 角色
     organization_roles: dict[UUID, ScopeRole]
     workspace_roles: dict[UUID, ScopeRole]
     project_roles: dict[UUID, ScopeRole]
+    # 主体可见的组织/工作区/项目集合
     organization_ids: frozenset[UUID]
     workspace_ids: frozenset[UUID]
     project_ids: frozenset[UUID]
+    # 项目 -> 所属工作区 的映射
     project_workspace_ids: dict[UUID, UUID] = field(default_factory=dict)
 
     @property
     def is_tenant_admin(self) -> bool:
+        """是否为租户管理员。"""
         return self.tenant_role == TenantRole.TENANT_ADMIN
 
 
 async def resolve_principal(session: AsyncSession, claims: TokenClaims) -> Principal:
-    """Map a verified token to an active tenant user and its memberships.
+    """把已校验令牌映射为处于活跃状态的租户用户及其成员关系。
 
-    The tenant claim is only a signed lookup key. A matching user row must exist
-    in that tenant, and every scope role is loaded from the database. JWT claims
-    named ``role``, ``roles``, ``permissions``, etc. are ignored.
+    租户声明仅作为带签名的查询键；必须在该租户下存在匹配的用户记录，
+    且所有层级角色都从数据库加载。JWT 中名为 ``role``/``roles``/
+    ``permissions`` 等的声明一律忽略。
     """
     tenant = await session.get(Tenant, claims.tenant_id)
     if tenant is None:
@@ -93,11 +99,10 @@ async def resolve_principal_for_user(
     tenant_id: UUID,
     user_id: UUID,
 ) -> Principal:
-    """Resolve a trusted internal user for a durable worker.
+    """为持久化 worker 解析受信任的内部用户。
 
-    This is used only after the worker has loaded a tenant-scoped run. It still
-    reloads the active tenant, user, and memberships from PostgreSQL; no role or
-    permission claim is trusted.
+    仅在 worker 已加载租户范围的运行记录后使用；仍会从 PostgreSQL 重新
+    加载活跃租户、用户与成员关系，不相信任何角色/权限声明。
     """
     tenant = await session.get(Tenant, tenant_id)
     if tenant is None or tenant.status != TenantStatus.ACTIVE:
@@ -119,6 +124,7 @@ async def _build_principal(
     tenant: Tenant,
     user: User,
 ) -> Principal:
+    """从数据库加载用户在组织/工作区/项目三层的活跃成员关系，组装 Principal。"""
     organization_roles: dict[UUID, ScopeRole] = {}
     workspace_roles: dict[UUID, ScopeRole] = {}
     project_roles: dict[UUID, ScopeRole] = {}
@@ -127,6 +133,7 @@ async def _build_principal(
     project_ids: set[UUID] = set()
     project_workspace_ids: dict[UUID, UUID] = {}
 
+    # 组织级成员关系
     org_rows = await session.scalars(
         select(OrganizationMembership).where(
             OrganizationMembership.tenant_id == tenant.id,
@@ -139,6 +146,7 @@ async def _build_principal(
         organization_roles[membership.organization_id] = role
         organization_ids.add(membership.organization_id)
 
+    # 工作区级成员关系（联表带出所属组织）
     workspace_rows = await session.execute(
         select(WorkspaceMembership, Workspace.organization_id)
         .join(Workspace, Workspace.id == WorkspaceMembership.workspace_id)
@@ -155,6 +163,7 @@ async def _build_principal(
         workspace_ids.add(membership.workspace_id)
         organization_ids.add(organization_id)
 
+    # 项目级成员关系（联表带出所属工作区与组织）
     project_rows = await session.execute(
         select(ProjectMembership, Project.workspace_id, Workspace.organization_id)
         .join(Project, Project.id == ProjectMembership.project_id)

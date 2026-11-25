@@ -1,4 +1,4 @@
-"""Per-tenant quotas and concurrency limits."""
+"""按租户配置的配额与并发限制。"""
 
 from __future__ import annotations
 

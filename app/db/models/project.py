@@ -1,4 +1,4 @@
-"""Projects belong to one workspace and remain inside the same tenant."""
+"""项目：归属于某一工作区，且始终处于同一租户之内。"""
 
 from __future__ import annotations
 

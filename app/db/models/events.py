@@ -1,4 +1,4 @@
-"""Transactional outbox, consumer idempotency, and dead-letter records."""
+"""事务性 outbox、消费者幂等记录与死信（失败）记录。"""
 
 from __future__ import annotations
 

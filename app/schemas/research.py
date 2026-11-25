@@ -1,4 +1,4 @@
-"""Research run, finding, checkpoint, and tool trace API schemas."""
+"""调研运行、发现、检查点与工具轨迹接口 Schema。"""
 
 from __future__ import annotations
 

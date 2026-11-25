@@ -1,4 +1,4 @@
-"""Evidence review, report, approval, and export APIs."""
+"""证据审查、报告、审批与导出接口。"""
 
 from __future__ import annotations
 

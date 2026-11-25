@@ -1,4 +1,4 @@
-"""Derive distinct source, evidence, claim, and citation entities from findings."""
+"""从发现结论派生来源、证据、主张与引用实体。"""
 
 from __future__ import annotations
 

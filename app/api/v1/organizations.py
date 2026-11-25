@@ -1,4 +1,4 @@
-"""Organization endpoints and organization-scoped memberships."""
+"""组织接口与组织级成员关系。"""
 
 from __future__ import annotations
 

@@ -1,10 +1,4 @@
-"""Aggregate queue-depth exporter for Prometheus.
-
-This is deliberately a separate process: it iterates active tenants, enters each
-tenant context, and sums queue counts. Metrics contain no tenant labels, so they
-are safe to scrape cluster-wide. Run it as a sidecar/Deployment with a
-NetworkPolicy that only permits the monitoring namespace to reach its port.
-"""
+"""聚合队列深度的 Prometheus 导出器。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Project collaboration enums."""
+"""项目协作（评论、审批）相关枚举。"""
 
 from __future__ import annotations
 

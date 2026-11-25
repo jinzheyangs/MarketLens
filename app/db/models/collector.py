@@ -1,4 +1,4 @@
-"""External sources, snapshots, collection tasks, and domain rate limits."""
+"""外部来源、网页快照、采集任务与域名速率限制。"""
 
 from __future__ import annotations
 

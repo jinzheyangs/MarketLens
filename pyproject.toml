@@ -68,6 +68,9 @@ select = ["E", "F", "I", "B", "UP", "ASYNC", "S", "C4", "SIM", "RUF"]
 ignore = [
     # FastAPI dependency patterns commonly use function calls in defaults; not used yet.
     "B008",
+    # 注释与文档以中文书写，允许使用全角冒号、括号、逗号等中文标点。
+    "RUF002",
+    "RUF003",
 ]
 
 [tool.ruff.lint.per-file-ignores]

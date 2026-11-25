@@ -1,9 +1,4 @@
-"""Application configuration.
-
-All configuration is read from environment variables (optionally a local ``.env``
-file for development). Secrets are never given code defaults and never appear in
-``repr()`` output, error messages, or logs.
-"""
+"""应用配置：从环境变量加载并校验各功能开关与连接参数。"""
 
 from __future__ import annotations
 
@@ -65,7 +60,7 @@ class Settings(BaseSettings):
     URLs, never with user-supplied URLs.
     """
 
-    model_config = SettingsConfigDict(
+    model_config = SettingsConfigDict(          #优先环境变量，本地可读 `.env` 文件；大小写不敏感。
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,

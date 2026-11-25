@@ -1,4 +1,4 @@
-"""Isolated collection worker with DB-backed leases, retries, and rate limits.
+"""隔离采集 worker：数据库租约、重试与速率限制。
 
 Run as a separate process (``python -m app.collector.worker``), not in the API
 process. The worker iterates active tenants and binds tenant context before any

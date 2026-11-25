@@ -1,4 +1,4 @@
-"""Derive document ACL scope from server-side workspace/project roles."""
+"""从服务端工作区/项目角色推导文档访问范围（ACL）。"""
 
 from __future__ import annotations
 

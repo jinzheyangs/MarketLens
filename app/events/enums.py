@@ -1,4 +1,4 @@
-"""Event outbox and consumer state enums."""
+"""事件 outbox 与消费者状态枚举。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Tenant-admin operational queue visibility."""
+"""租户管理员运维队列可见性接口。"""
 
 from __future__ import annotations
 

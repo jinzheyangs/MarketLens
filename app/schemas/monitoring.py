@@ -1,4 +1,4 @@
-"""Monitoring, channel, change, and notification API schemas."""
+"""监测、渠道、变更与通知接口 Schema。"""
 
 from __future__ import annotations
 

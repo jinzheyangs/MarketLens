@@ -1,4 +1,4 @@
-"""Safe reporting/review errors."""
+"""安全的报告/审查错误类型。"""
 
 from __future__ import annotations
 

@@ -1,12 +1,11 @@
-"""Fail-closed ORM write guard for tenant-scoped rows.
+"""ORM 写入侧的 fail-closed 租户守卫。
 
-This is a foundation, not the complete isolation boundary. Stage 2 adds
-server-derived tenant context, SQL/RLS policies, and query-level enforcement.
-Rules enforced here:
+这是隔离边界的基础层，而非完整隔离：完整隔离还依赖服务端派生的租户
+上下文、SQL/RLS 策略与查询级强制。这里强制的规则：
 
-* a tenant-scoped INSERT requires an authenticated tenant context;
-* a missing ``tenant_id`` on a new row is bound from that context;
-* creating/updating/deleting a row for another tenant is rejected.
+* 插入租户范围的行必须存在已鉴权租户上下文；
+* 新行缺失 ``tenant_id`` 时从上下文绑定；
+* 为其他租户创建/更新/删除行会被拒绝。
 """
 
 from __future__ import annotations
@@ -23,9 +22,8 @@ from app.db.mixins import TenantScopedMixin
 
 
 def apply_tenant_scope(instance: TenantScopedMixin, tenant_id: UUID, *, is_new: bool) -> None:
-    """Bind or validate ``instance.tenant_id`` against the active tenant."""
-    # A new ORM instance may not have a value yet; the annotation alone cannot
-    # express that pre-flush state.
+    """按当前租户绑定或校验 ``instance.tenant_id``。"""
+    # 新建 ORM 实例在 flush 前可能还没有值，类型注解无法表达该前置状态
     current: UUID | None = getattr(instance, "tenant_id", None)
     if is_new and current is None:
         instance.tenant_id = tenant_id
@@ -35,6 +33,7 @@ def apply_tenant_scope(instance: TenantScopedMixin, tenant_id: UUID, *, is_new: 
 
 
 def _before_flush(session: Session, flush_context: Any, instances: object) -> None:
+    """flush 前拦截新增/变更/删除的租户范围对象并做校验绑定。"""
     tenant_id = current_tenant_id()
 
     scoped_new = [obj for obj in session.new if isinstance(obj, TenantScopedMixin)]
@@ -53,6 +52,6 @@ def _before_flush(session: Session, flush_context: Any, instances: object) -> No
 
 
 def install_tenant_guard() -> None:
-    """Install the flush guard once per process."""
+    """每进程安装一次 flush 守卫（幂等）。"""
     if not event.contains(Session, "before_flush", _before_flush):
         event.listen(Session, "before_flush", _before_flush)

@@ -1,11 +1,4 @@
-"""Re-encrypt notification channel secrets under the current primary key.
-
-Rotation procedure:
-1. Set ``NOTIFICATION_PREVIOUS_ENCRYPTION_KEY`` to the old key.
-2. Set ``NOTIFICATION_ENCRYPTION_KEY`` to the new key.
-3. Run this command with ``--execute`` (dry-run is the default).
-4. Remove the previous key after all channels are reported rotated.
-"""
+"""用当前主密钥对通知渠道密钥重新加密。"""
 
 from __future__ import annotations
 

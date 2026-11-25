@@ -1,4 +1,4 @@
-"""Hybrid retrieval: PostgreSQL full text/keyword + Qdrant vectors + RRF rerank.
+"""混合检索：PostgreSQL 全文/关键词 + Qdrant 向量 + RRF 重排。
 
 Candidate filtering happens in both stores using tenant/workspace/project scope.
 Every returned candidate is re-read from PostgreSQL with the same ACL and the

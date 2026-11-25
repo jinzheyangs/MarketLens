@@ -1,4 +1,4 @@
-"""Evidence review, claims, citations, reports, versions, and export jobs."""
+"""证据审查、主张、引用、报告、版本与导出任务。"""
 
 from __future__ import annotations
 

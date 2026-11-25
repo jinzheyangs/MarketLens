@@ -1,9 +1,4 @@
-"""Organization, workspace, project, and membership operations.
-
-All queries add an explicit tenant predicate, and PostgreSQL RLS enforces the
-same boundary as defense in depth. Services assume authorization has already
-been granted by the request layer and only perform the state change plus audit.
-"""
+"""组织、工作区、项目与成员关系操作。"""
 
 from __future__ import annotations
 

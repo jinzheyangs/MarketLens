@@ -1,9 +1,7 @@
-"""Bearer-token authentication and tenant-context middleware.
+"""Bearer 令牌鉴权与租户上下文中间件。
 
-Every path under the API prefix requires a verified token by default. The
-middleware verifies the JWT and binds the tenant context; it deliberately does
-not consult role/permission claims. The principal and memberships are loaded
-from PostgreSQL by the request dependency.
+API 前缀下的所有路径默认要求已校验令牌。中间件只校验 JWT 并绑定租户
+上下文，刻意不读取角色/权限声明；主体与成员关系由请求依赖层从数据库加载。
 """
 
 from __future__ import annotations
@@ -50,6 +48,7 @@ class AuthenticationMiddleware:
 
         verifier = self.verifier_provider()
         if verifier is None:
+            # 未配置校验器：鉴权未就绪，拒绝请求
             logger.error(
                 "authentication_not_configured",
                 extra={"context": {"path": scope.get("path")}},
@@ -89,6 +88,7 @@ class AuthenticationMiddleware:
             await self._reject_token(scope, receive, send, reason=exc.reason)
             return
 
+        # 校验通过：把声明与租户 ID 写入请求状态，并绑定当前上下文
         state = scope.setdefault("state", {})
         if isinstance(state, dict):
             state["claims"] = claims
@@ -98,6 +98,7 @@ class AuthenticationMiddleware:
         try:
             await self.app(scope, receive, send)
         finally:
+            # 退出请求时还原租户上下文，避免跨请求串租户
             reset_tenant_id(context_token)
 
     async def _reject_token(

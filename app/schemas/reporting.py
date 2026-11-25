@@ -1,4 +1,4 @@
-"""Evidence review, report, version, approval, and export API schemas."""
+"""证据审查、报告、版本、审批与导出接口 Schema。"""
 
 from __future__ import annotations
 

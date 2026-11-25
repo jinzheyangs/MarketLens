@@ -1,4 +1,4 @@
-"""Current principal endpoint."""
+"""当前登录主体信息接口。"""
 
 from __future__ import annotations
 

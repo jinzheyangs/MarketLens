@@ -1,8 +1,4 @@
-"""Dependency readiness checks.
-
-Failures are reported only as component status; exception details, DSNs, and
-upstream response bodies stay in server logs (and are redacted there).
-"""
+"""依赖就绪性检查。"""
 
 from __future__ import annotations
 

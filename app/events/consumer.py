@@ -1,4 +1,4 @@
-"""Kafka consumer with consumer-side idempotency and DB dead-letter records."""
+"""Kafka 消费者：消费者侧幂等与数据库死信记录。"""
 
 from __future__ import annotations
 

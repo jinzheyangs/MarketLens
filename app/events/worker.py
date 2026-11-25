@@ -1,4 +1,4 @@
-"""Outbox dispatcher and Kafka event consumer CLI."""
+"""Outbox 派发器与 Kafka 事件消费者命令行入口。"""
 
 from __future__ import annotations
 

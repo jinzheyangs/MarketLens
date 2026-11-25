@@ -1,4 +1,4 @@
-"""Enums for evidence review, reports, versions, and export jobs."""
+"""证据审查、报告、版本与导出任务枚举。"""
 
 from __future__ import annotations
 

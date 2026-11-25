@@ -1,4 +1,4 @@
-"""External search, collection tasks, and source snapshot APIs."""
+"""外部搜索、采集任务与来源快照接口。"""
 
 from __future__ import annotations
 

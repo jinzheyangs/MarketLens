@@ -1,8 +1,7 @@
-"""Read-only research tool registry with explicit least-privilege scopes.
+"""只读研究工具注册表，显式最小权限授予。
 
-No write, administration, collection-mutation, or arbitrary HTTP tool is exposed
-to an agent. Tool arguments are bounded and persisted as a trace; tool output is
-treated as untrusted evidence and later checked against model citations.
+不向 Agent 暴露任何写入、管理、采集变更或任意 HTTP 工具。工具参数有
+边界并落库为调用轨迹；工具输出被当作不可信证据，随后对照模型引用复核。
 """
 
 from __future__ import annotations
@@ -43,10 +42,12 @@ _EDITOR_ROLES = frozenset({ScopeRole.EDITOR, ScopeRole.ADMIN})
 
 
 def _escape_like(value: str) -> str:
+    """转义 LIKE 模式中的特殊字符（反斜杠、%、_）。"""
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _query_tokens(question: str) -> list[str]:
+    """从问题中提取有限数量的关键词，用于本地快照模糊检索。"""
     tokens: list[str] = []
     for token in _TOKEN_PATTERN.findall(question):
         candidate = token[:40]
@@ -58,10 +59,12 @@ def _query_tokens(question: str) -> list[str]:
 
 
 def _evidence_id(kind: FindingSourceKind, identifier: UUID) -> str:
+    """生成证据 ID：来源类型 + 资源 UUID。"""
     return f"{kind.value}:{identifier}"
 
 
 class ResearchToolbox:
+    """按主体权限装配可用的只读研究工具，并统一执行与记录调用轨迹。"""
     def __init__(
         self,
         *,
@@ -113,6 +116,7 @@ class ResearchToolbox:
 
     @property
     def available_tools(self) -> frozenset[ResearchToolName]:
+        """当前主体可用的工具集合。"""
         return self._available_tools
 
     async def collect(
@@ -122,6 +126,7 @@ class ResearchToolbox:
         question: str,
         tool_call_budget: int,
     ) -> ToolCollection:
+        """按固定顺序依次调用可用工具，受工具调用预算约束，最后去重截断。"""
         collection = ToolCollection()
         call_limit = min(tool_call_budget, self._settings.agent_max_tool_calls_per_task)
         if call_limit <= 0:
@@ -161,6 +166,7 @@ class ResearchToolbox:
         tool_name: ResearchToolName,
         question: str,
     ) -> None:
+        """执行单个工具并记录调用轨迹，分类处理各类异常。"""
         started = time.perf_counter()
         collection.tool_calls += 1
         try:
@@ -226,6 +232,7 @@ class ResearchToolbox:
         *,
         question: str,
     ) -> tuple[list[EvidenceItem], list[SearchLead]]:
+        """按工具名分发到具体实现。"""
         if tool_name is ResearchToolName.KNOWLEDGE_SEARCH:
             return await self._knowledge_search(question)
         if tool_name is ResearchToolName.SOURCE_SEARCH:
@@ -238,6 +245,7 @@ class ResearchToolbox:
         self,
         question: str,
     ) -> tuple[list[EvidenceItem], list[SearchLead]]:
+        """检索内部知识库（RAG），返回文档分块证据。"""
         if self._rag_services is None or self._document_scope is None:
             raise ToolUnavailableError
         results = await self._rag_services.search(
@@ -270,6 +278,7 @@ class ResearchToolbox:
         self,
         question: str,
     ) -> tuple[list[EvidenceItem], list[SearchLead]]:
+        """在本工作区已抓取的网页快照中按关键词检索证据。"""
         tokens = _query_tokens(question)
         if not tokens:
             raise ToolExecutionError
@@ -306,6 +315,7 @@ class ResearchToolbox:
         self,
         source_id: UUID,
     ) -> tuple[list[EvidenceItem], list[SearchLead]]:
+        """按来源 ID 读取其最新快照内容。"""
         async with self._session_factory() as session:
             source = await session.scalar(
                 tenant_scoped_select(WebSource).where(
@@ -331,6 +341,7 @@ class ResearchToolbox:
         self,
         question: str,
     ) -> tuple[list[EvidenceItem], list[SearchLead]]:
+        """调用外部搜索供应商；命中已有快照则入证据，否则作为线索返回。"""
         if self._collector_services is None:
             raise ToolUnavailableError
         provider = require_search_provider(self._collector_services)
@@ -385,6 +396,7 @@ class ResearchToolbox:
         source: WebSource,
         snapshot: SourceSnapshot,
     ) -> EvidenceItem:
+        """把网页来源 + 快照转换为标准证据项。"""
         return EvidenceItem(
             evidence_id=_evidence_id(FindingSourceKind.EXTERNAL_SOURCE, snapshot.id),
             source_kind=FindingSourceKind.EXTERNAL_SOURCE,
@@ -408,6 +420,7 @@ class ResearchToolbox:
         error_code: str | None,
         latency_ms: float,
     ) -> None:
+        """落库一条工具调用轨迹（参数、结果数、错误码、耗时）。"""
         arguments: dict[str, Any] = {"query": query[:500]}
         if source_id is not None:
             arguments = {"source_id": str(source_id)}
@@ -429,6 +442,7 @@ class ResearchToolbox:
 
 
 def accessible_tool_names(toolbox: ResearchToolbox) -> Sequence[str]:
+    """返回工具箱可用工具名的排序列表（供接口/调试展示）。"""
     return sorted(tool.value for tool in toolbox.available_tools)
 
 

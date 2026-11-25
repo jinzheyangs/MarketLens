@@ -1,4 +1,4 @@
-"""Project endpoints and project-scoped memberships."""
+"""项目接口与项目级成员关系。"""
 
 from __future__ import annotations
 

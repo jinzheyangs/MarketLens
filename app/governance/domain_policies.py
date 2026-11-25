@@ -1,4 +1,4 @@
-"""Per-tenant collection domain allow/block policy."""
+"""按租户配置采集域名放行/拦截策略。"""
 
 from __future__ import annotations
 

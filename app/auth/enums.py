@@ -1,4 +1,4 @@
-"""Domain enums shared by models, schemas, and policies."""
+"""模型、Schema 与授权策略共享的领域枚举。"""
 
 from __future__ import annotations
 

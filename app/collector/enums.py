@@ -1,4 +1,4 @@
-"""Collection task and source lifecycle enums."""
+"""采集任务与来源生命周期枚举。"""
 
 from __future__ import annotations
 

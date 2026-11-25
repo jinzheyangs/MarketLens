@@ -1,8 +1,8 @@
-"""LangGraph Supervisor and specialist agents.
+"""LangGraph 主管（Supervisor）与专业 Agent 编排图。
 
-The graph uses LangGraph fan-out (``Send``) for bounded parallel research and is
-persisted by the runner after each superstep. It contains no arbitrary agent
-conversation loop: rounds, tools, findings, and budgets are all bounded.
+编排图通过 LangGraph 的 fan-out（``Send``）实现有界并行调研，每个
+superstep 后由 runner 持久化状态。图中不存在任意的 Agent 自由对话循环：
+轮次、工具、发现条数与预算全部有上限约束。
 """
 
 from __future__ import annotations
@@ -52,6 +52,8 @@ logger = logging.getLogger(__name__)
 
 
 class EvidenceToolbox(Protocol):
+    """取证工具箱协议：按角色与问题收集授权范围内的证据。"""
+
     async def collect(
         self,
         *,
@@ -68,6 +70,7 @@ def _usage_event(
     usage: ModelUsage,
     budget: dict[str, Any],
 ) -> dict[str, Any]:
+    """组装一次模型调用的用量事件（token、估算成本）。"""
     return {
         "kind": kind,
         "agent_role": role.value,
@@ -82,11 +85,13 @@ def _usage_event(
 
 
 def _task_id(*, round_number: int, role: AgentRole, index: int, question: str) -> str:
+    """生成确定性任务 ID：轮次 + 角色 + 序号 + 问题哈希，便于重试去重。"""
     digest = hashlib.sha256(normalize_text(question).casefold().encode()).hexdigest()[:16]
     return f"r{round_number}:{role.value}:{index}:{digest}"
 
 
 def _pending_tasks(state: ResearchState) -> list[dict[str, Any]]:
+    """找出待执行任务：尚未执行，或失败且可重试、未超最大尝试次数。"""
     latest = latest_task_results(state)
     max_attempts = int(state.get("budget", {}).get("max_task_attempts", 1))
     pending: list[dict[str, Any]] = []
@@ -108,6 +113,7 @@ def _pending_tasks(state: ResearchState) -> list[dict[str, Any]]:
 
 
 def _budget_slices(state: ResearchState, pending_count: int) -> dict[str, int] | None:
+    """把剩余预算按待执行任务数切片；预算不足时返回 ``None``。"""
     if pending_count <= 0:
         return None
     budget = state.get("budget", {})
@@ -150,6 +156,7 @@ def _budget_slices(state: ResearchState, pending_count: int) -> dict[str, int] |
 
 
 def _attempt_for(state: ResearchState, task_id: str) -> int:
+    """计算某任务当前是第几次尝试。"""
     result = latest_task_results(state).get(task_id)
     if result is None:
         return 1
@@ -164,6 +171,7 @@ def _plan_task(
     question: str,
     focus: str | None,
 ) -> dict[str, Any]:
+    """把模型规划出的提案转成图内标准任务定义。"""
     return {
         "task_id": _task_id(
             round_number=round_number,
@@ -184,6 +192,7 @@ def _finding_key(
     source_id: str,
     claim: str,
 ) -> str:
+    """生成结论去重键：运行 + 来源 + 归一化结论的哈希。"""
     raw = f"{run_id}:{source_id}:{normalize_text(claim).casefold()}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
@@ -197,6 +206,10 @@ def _validate_findings(
     evidence: Sequence[EvidenceItem],
     max_findings: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """校验模型产出的发现：引用必须在授权证据内、摘录必须被原文支撑，并去重。
+
+    返回 (合法发现列表, 校验错误列表)。
+    """
     ledger = {item.evidence_id: item for item in evidence}
     findings: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
@@ -281,6 +294,7 @@ def _failed_result(
     tool_calls: int,
     retryable: bool,
 ) -> dict[str, Any]:
+    """组装一条失败任务结果记录。"""
     return {
         "task_id": str(task["task_id"]),
         "agent_role": str(task["agent_role"]),
@@ -299,7 +313,13 @@ def build_research_graph(
     model: ResearchModel,
     toolbox: EvidenceToolbox,
 ) -> CompiledStateGraph[ResearchState, None, ResearchState, ResearchState]:
+    """构建并编译调研编排图。
+
+    节点：主管规划 -> （并行）专业 Agent -> 汇总 -> 主管决策 -> 收尾。
+    """
+
     async def supervisor_plan(state: ResearchState) -> dict[str, Any]:
+        """主管规划节点：判断收尾/预算/重试，否则调用模型生成本轮任务计划。"""
         if state.get("stop_reason"):
             return {"phase": ResearchPhase.FINALIZING.value}
         if budget_exhausted(state):
@@ -437,6 +457,7 @@ def build_research_graph(
         return next_state
 
     async def specialist(payload: dict[str, Any]) -> dict[str, Any]:
+        """专业 Agent 节点：取证 -> 模型分析 -> 校验发现，带超时与预算异常处理。"""
         task = payload["task"]
         role = role_from_task(task)
         attempt = int(payload.get("attempt", 1))
@@ -663,12 +684,14 @@ def build_research_graph(
             }
 
     async def aggregate(state: ResearchState) -> dict[str, Any]:
+        """汇总节点：各并行任务结果合并后进入决策阶段。"""
         return {
             "phase": ResearchPhase.DECIDING.value,
             "aggregate_needed": False,
         }
 
     async def supervisor_decision(state: ResearchState) -> dict[str, Any]:
+        """主管决策节点：决定重试、补查一轮还是收尾（含部分失败判定）。"""
         if state.get("stop_reason"):
             return {"phase": ResearchPhase.FINALIZING.value}
         if budget_exhausted(state):
@@ -732,12 +755,14 @@ def build_research_graph(
         }
 
     async def finalize(state: ResearchState) -> dict[str, Any]:
+        """收尾节点：置为已完成阶段并确定停止原因。"""
         return {
             "phase": ResearchPhase.FINALIZED.value,
             "stop_reason": state.get("stop_reason") or StopReason.COMPLETED.value,
         }
 
     def dispatch(state: ResearchState) -> list[Send] | str:
+        """规划后的条件分发：无可执行任务则汇总/收尾，否则并行 Send 到专业 Agent。"""
         if state.get("stop_reason"):
             return "finalize"
         pending = _pending_tasks(state)
@@ -766,6 +791,7 @@ def build_research_graph(
         ]
 
     def after_decision(state: ResearchState) -> str:
+        """决策后的条件边：需要重试/补查则回到规划，否则收尾。"""
         if state.get("stop_reason"):
             return "finalize"
         if state.get("request_new_plan") or state.get("request_retry"):

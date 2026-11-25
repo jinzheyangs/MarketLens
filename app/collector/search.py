@@ -1,4 +1,4 @@
-"""Configurable search provider abstraction.
+"""可配置搜索供应商抽象。
 
 The HTTP provider targets a simple, documented JSON contract and is not tied to
 a specific vendor. Provider output is untrusted and must still pass URL/domain

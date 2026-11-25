@@ -1,4 +1,4 @@
-"""Document ingestion lifecycle enums."""
+"""文档入库生命周期枚举。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,8 @@
-"""Unified JSON error envelope used by handlers and ASGI middleware."""
+"""统一的 JSON 错误响应信封。
+
+供异常处理器与 ASGI 中间件复用，保证所有错误响应结构一致：
+``{"error": {"code", "message", "request_id", "retryable", "details?"}}``。
+"""
 
 from __future__ import annotations
 
@@ -18,6 +22,7 @@ def error_payload(
     details: Mapping[str, Any] | list[Any] | None = None,
     retryable: bool = False,
 ) -> dict[str, Any]:
+    """构造错误响应体字典，自动带上当前请求 ID。"""
     error: dict[str, Any] = {
         "code": str(code),
         "message": message,
@@ -38,6 +43,7 @@ def error_response(
     retryable: bool = False,
     headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
+    """构造带统一信封与可选响应头的 JSON 错误响应。"""
     return JSONResponse(
         status_code=status_code,
         content=error_payload(code, message, details=details, retryable=retryable),

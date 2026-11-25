@@ -1,4 +1,4 @@
-"""Document ingestion and retrieval API schemas."""
+"""文档入库与检索接口 Schema。"""
 
 from __future__ import annotations
 

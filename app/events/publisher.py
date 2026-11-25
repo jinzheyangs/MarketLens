@@ -1,4 +1,4 @@
-"""Event publisher abstraction with a Kafka adapter and a local log adapter."""
+"""事件发布抽象：Kafka 适配器与本地日志适配器。"""
 
 from __future__ import annotations
 

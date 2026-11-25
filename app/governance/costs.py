@@ -1,4 +1,4 @@
-"""Tenant/workspace/model cost attribution over research run usage."""
+"""按调研运行用量归集租户/工作区/模型成本。"""
 
 from __future__ import annotations
 

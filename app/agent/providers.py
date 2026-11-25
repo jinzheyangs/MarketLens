@@ -1,9 +1,8 @@
-"""Model gateway abstraction for planning and evidence-bound analysis.
+"""模型网关抽象：规划与受证据约束的分析。
 
-The backend does not trust model output. Provider responses are schema-validated
-and every proposed citation is later checked against the authorized evidence
-ledger. The HTTP provider is a generic JSON contract so deployments can route to
-an approved internal model gateway without embedding vendor SDKs or credentials.
+后端不信任模型输出：供应商响应经过 Schema 校验，每条提案引用随后还要
+对照授权证据台账复核。HTTP 供应商采用通用 JSON 契约，便于部署时对接
+内部批准的模型网关，而不内嵌厂商 SDK 或凭证。
 """
 
 from __future__ import annotations
@@ -29,11 +28,14 @@ logger = get_logger(__name__)
 
 
 class ModelUsage(BaseModel):
+    """模型用量：输入/输出 token 数（带上下限校验）。"""
+
     input_tokens: int = Field(ge=0, le=10_000_000)
     output_tokens: int = Field(ge=0, le=10_000_000)
 
 
 class PlanTaskProposal(BaseModel):
+    """模型规划出的单个子任务提案。"""
     agent_role: AgentRole
     question: str = Field(min_length=1, max_length=1_000)
     focus: str | None = Field(default=None, max_length=500)
@@ -56,6 +58,7 @@ class PlanTaskProposal(BaseModel):
 
 
 class FindingProposal(BaseModel):
+    """模型分析产出的单条发现提案（结论、引用摘录、范围、局限、置信度）。"""
     claim: str = Field(min_length=1, max_length=1_200)
     evidence_id: str = Field(min_length=1, max_length=128)
     evidence_quote: str = Field(min_length=1, max_length=4_000)
@@ -73,16 +76,21 @@ class FindingProposal(BaseModel):
 
 
 class PlanResult(BaseModel):
+    """规划结果：任务提案列表 + 用量。"""
+
     tasks: list[PlanTaskProposal] = Field(max_length=20)
     usage: ModelUsage
 
 
 class AnalysisResult(BaseModel):
+    """分析结果：发现提案列表 + 用量。"""
+
     findings: list[FindingProposal] = Field(max_length=20)
     usage: ModelUsage
 
 
 class ResearchModel(Protocol):
+    """模型供应商协议：规划、分析、关闭连接。"""
     async def plan(
         self,
         *,
@@ -109,14 +117,15 @@ class ResearchModel(Protocol):
 
 
 def _estimate_tokens(value: str) -> int:
+    """粗略按字符数 / 4 估算 token 数（本地确定性模型用）。"""
     return max(1, len(value) // 4)
 
 
 class DeterministicResearchModel:
-    """Deterministic local model used for development and contract tests.
+    """用于开发与契约测试的本地确定性模型。
 
-    It performs no network calls and is intentionally simple. It still follows
-    the same schema and citation-validation path as a remote model.
+    不发起网络调用，逻辑刻意简单；但仍走与远程模型相同的 Schema 与
+    引用校验路径。
     """
 
     def __init__(self, *, model: str) -> None:
@@ -208,7 +217,7 @@ class DeterministicResearchModel:
 
 
 class HTTPResearchModel:
-    """Generic JSON model gateway client with bounded retries and responses."""
+    """通用 JSON 模型网关客户端，带有界重试与响应大小限制。"""
 
     def __init__(self, settings: Settings) -> None:
         if not settings.agent_api_url:
@@ -309,6 +318,7 @@ class HTTPResearchModel:
         return result
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """向模型网关 POST 请求，处理重试、状态码与响应大小限制。"""
         last_error: Exception | None = None
         for attempt in range(self._max_retries + 1):
             try:
@@ -353,6 +363,7 @@ class HTTPResearchModel:
 
 
 def build_model_provider(settings: Settings) -> ResearchModel:
+    """按配置选择模型供应商：HTTP 网关或本地确定性模型。"""
     if settings.agent_provider == "http":
         return HTTPResearchModel(settings)
     return DeterministicResearchModel(model=settings.agent_model)

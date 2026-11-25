@@ -1,4 +1,4 @@
-"""Tenant user directory management (tenant administrators only)."""
+"""租户用户目录管理（仅租户管理员）。"""
 
 from __future__ import annotations
 

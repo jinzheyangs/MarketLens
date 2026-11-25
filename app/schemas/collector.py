@@ -1,4 +1,4 @@
-"""External search and collection API schemas."""
+"""外部搜索与采集接口 Schema。"""
 
 from __future__ import annotations
 

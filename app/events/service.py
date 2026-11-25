@@ -1,4 +1,4 @@
-"""Tenant-admin event outbox and dead-letter operations."""
+"""租户管理员事件 outbox 与死信操作。"""
 
 from __future__ import annotations
 

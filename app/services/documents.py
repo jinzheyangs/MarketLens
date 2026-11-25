@@ -1,4 +1,4 @@
-"""Document read projections and ACL-filtered listing."""
+"""文档读取投影与 ACL 过滤后的列表。"""
 
 from __future__ import annotations
 

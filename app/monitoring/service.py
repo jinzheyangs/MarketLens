@@ -1,4 +1,4 @@
-"""Monitoring subscriptions, notification channels, changes, and deliveries."""
+"""监测订阅、通知渠道、变更与投递服务。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Tenancy API schemas."""
+"""租户体系接口 Schema。"""
 
 from __future__ import annotations
 

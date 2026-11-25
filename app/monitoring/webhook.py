@@ -1,4 +1,4 @@
-"""SSRF-safe webhook delivery with pinned DNS and no redirects."""
+"""防 SSRF 的 Webhook 投递：DNS 固定、不跟随重定向。"""
 
 from __future__ import annotations
 

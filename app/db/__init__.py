@@ -1,1 +1,1 @@
-"""Database infrastructure: declarative base, tenant helpers, engine, models."""
+"""数据库基础设施：声明式基类、租户辅助、引擎与 ORM 模型。"""

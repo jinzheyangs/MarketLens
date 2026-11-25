@@ -1,4 +1,4 @@
-"""Tenant-level collection domain policy APIs."""
+"""租户级采集域名策略接口。"""
 
 from __future__ import annotations
 

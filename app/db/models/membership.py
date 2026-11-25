@@ -1,8 +1,7 @@
-"""Scope-specific role assignments.
+"""各层级（组织/工作区/项目）的角色分配。
 
-Roles are explicit per scope and inherited downward at authorization time:
-an organization role applies to its workspaces/projects, and a workspace role
-applies to its projects. There is no upward inheritance.
+角色按层级显式分配，并在授权时向下继承：组织角色覆盖其下工作区/项目，
+工作区角色覆盖其下项目；不存在向上继承。
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Safe monitoring and notification errors."""
+"""安全的监测与通知错误类型。"""
 
 from __future__ import annotations
 

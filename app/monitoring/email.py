@@ -1,9 +1,4 @@
-"""Minimal, operator-configured SMTP notification adapter.
-
-SMTP credentials and relay host come only from Settings (environment or a secret
-manager). Recipient addresses are passed in from the encrypted channel config.
-No recipient or credential values are logged.
-"""
+"""最小化、由运维配置的 SMTP 通知适配器。"""
 
 from __future__ import annotations
 

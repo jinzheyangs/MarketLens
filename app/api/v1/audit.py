@@ -1,4 +1,4 @@
-"""Audit event read API (tenant administrators only)."""
+"""审计事件查询接口（仅租户管理员）。"""
 
 from __future__ import annotations
 

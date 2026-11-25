@@ -1,4 +1,4 @@
-"""Safe HTML/plain-text extraction without executing page content."""
+"""安全的 HTML/纯文本提取，不执行页面内容。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Tenant-scoped research runs, checkpoints, findings, and tool traces."""
+"""租户范围的调研运行、检查点、发现结论与工具调用轨迹。"""
 
 from __future__ import annotations
 
@@ -43,6 +43,8 @@ _AGENT_ROLES = ", ".join(f"'{role}'" for role in SPECIALIST_ROLES)
 
 
 class ResearchRun(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
+    """一次多 Agent 调研运行：目标、状态、预算、用量、计划与租约信息。"""
+
     __tablename__ = "research_runs"
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_research_runs_tenant_id_id"),
@@ -203,6 +205,8 @@ class ResearchRun(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
 
 
 class ResearchCheckpoint(UUIDPrimaryKeyMixin, TenantScopedMixin, Base):
+    """调研状态快照：按序号保存某一节点的完整 JSON 状态，用于暂停恢复与回放。"""
+
     __tablename__ = "research_checkpoints"
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_research_checkpoints_tenant_id_id"),
@@ -240,6 +244,8 @@ class ResearchCheckpoint(UUIDPrimaryKeyMixin, TenantScopedMixin, Base):
 
 
 class ResearchFinding(UUIDPrimaryKeyMixin, TenantScopedMixin, Base):
+    """一条带证据绑定的调研发现：结论、证据摘录、来源定位与置信度。"""
+
     __tablename__ = "research_findings"
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_research_findings_tenant_id_id"),
@@ -314,6 +320,8 @@ class ResearchFinding(UUIDPrimaryKeyMixin, TenantScopedMixin, Base):
 
 
 class ResearchToolCall(UUIDPrimaryKeyMixin, TenantScopedMixin, Base):
+    """专业 Agent 的一次只读工具调用记录：工具名、参数、结果数、耗时与状态。"""
+
     __tablename__ = "research_tool_calls"
     __table_args__ = (
         ForeignKeyConstraint(

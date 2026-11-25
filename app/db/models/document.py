@@ -1,8 +1,7 @@
-"""Documents, immutable versions, and citation-bearing chunks.
+"""文档、不可变版本与带引用定位的分块（chunk）。
 
-Document access is derived from workspace/project scope and re-checked against
-PostgreSQL for every retrieved candidate. Chunk IDs are deterministic so
-re-indexing is idempotent in both PostgreSQL and Qdrant.
+文档权限由工作区/项目范围派生，且每个检索候选都回查 PostgreSQL 复核。
+chunk ID 保持确定性，因此在 PostgreSQL 与 Qdrant 中重建索引都是幂等的。
 """
 
 from __future__ import annotations
@@ -41,6 +40,8 @@ _VERSION_STATUSES = ", ".join(f"'{status}'" for status in DocumentVersionStatus)
 
 
 class Document(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
+    """文档主记录：归属工作区/项目，指向当前生效版本。"""
+
     __tablename__ = "documents"
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_documents_tenant_id_id"),
@@ -84,6 +85,8 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
 
 
 class DocumentVersion(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
+    """文档的不可变版本：原始文件对象键、校验和、解析/嵌入状态与错误信息。"""
+
     __tablename__ = "document_versions"
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_document_versions_tenant_id_id"),
@@ -132,6 +135,8 @@ class DocumentVersion(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Ba
 
 
 class DocumentChunk(UUIDPrimaryKeyMixin, TenantScopedMixin, Base):
+    """文档分块：文本内容、页码/段落/偏移定位、全文检索向量与嵌入元数据。"""
+
     __tablename__ = "document_chunks"
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_document_chunks_tenant_id_id"),

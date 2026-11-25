@@ -1,7 +1,4 @@
-"""Event-consumer handler assembly.
-
-Stage 8 extends this registry with monitoring and notification handlers.
-"""
+"""事件消费者处理器装配。"""
 
 from __future__ import annotations
 

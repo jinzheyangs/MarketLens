@@ -1,4 +1,4 @@
-"""Markdown and DOCX report exporters."""
+"""Markdown 与 DOCX 报告导出器。"""
 
 from __future__ import annotations
 

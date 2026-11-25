@@ -1,4 +1,4 @@
-"""Tenant-admin event outbox and consumer dead-letter APIs."""
+"""租户管理员事件 outbox 与消费者死信接口。"""
 
 from __future__ import annotations
 

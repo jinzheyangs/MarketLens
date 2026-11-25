@@ -1,4 +1,4 @@
-"""Tenant quota inspection and management APIs."""
+"""租户配额查询与管理接口。"""
 
 from __future__ import annotations
 
